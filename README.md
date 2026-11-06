@@ -191,6 +191,12 @@ into `release/`, replacing the previous artifacts:
 place. Intermediate build output stays in
 `src-tauri/target/x86_64-pc-windows-msvc/release/`.
 
+`npm run build:windows` then creates or updates the GitHub release for the
+version in `package.json` and uploads the portable exe and installer to it. Bump
+the version to publish a new release; rebuilding the same version replaces the
+assets. Publishing needs the GitHub CLI (`gh`) signed in — without it the build
+still completes and only updates `release/`. `npm run build:exe` never publishes.
+
 The application executable requires WebView2 on the destination computer. Use
 the NSIS installer for distribution; it handles WebView2 installation when
 needed. Initial builds need Internet access for dependencies and installer

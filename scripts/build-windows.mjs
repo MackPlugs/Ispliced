@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -43,9 +44,46 @@ function publish(folder, sources) {
   });
 }
 
+function packageVersion() {
+  return JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version;
+}
+
+function releaseNotes(version) {
+  return [
+    `Portable Windows build and NSIS installer for Ispliced ${version}.`,
+    "",
+    "The portable exe needs the Microsoft Edge WebView2 runtime; the installer sets it up automatically.",
+  ].join("\n");
+}
+
+/** Creates or refreshes the GitHub release for this version and uploads both artifacts. */
+function publishRelease(version, portable, installers) {
+  if (spawnSync("gh", ["auth", "status"], { cwd: root, stdio: "ignore" }).status !== 0) {
+    console.warn("Skipping GitHub release: gh is not installed or not authenticated.");
+    return;
+  }
+
+  const tag = `v${version}`;
+  const upload = path.join(tmpdir(), `Ispliced_${version}_x64-portable.exe`);
+  copyFileSync(portable, upload);
+
+  const exists = spawnSync("gh", ["release", "view", tag], { cwd: root, stdio: "ignore" }).status === 0;
+  const assets = [upload, ...installers];
+  const args = exists
+    ? ["release", "upload", tag, ...assets, "--clobber"]
+    : ["release", "create", tag, ...assets, "--title", `Ispliced ${version}`, "--notes", releaseNotes(version)];
+
+  try {
+    run("gh", args, { stdio: "inherit" });
+    console.log(`GitHub release: ${tag}`);
+  } finally {
+    rmSync(upload, { force: true });
+  }
+}
+
 export function main(args = process.argv.slice(2)) {
   if (args.includes("--help")) {
-    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe\n  yarn build:exe      Application exe only\nArtifacts are copied to release/exe and release/installer.\nSee README.md for prerequisites and output paths.");
+    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe, published to GitHub\n  yarn build:exe      Application exe only (no release)\nArtifacts are copied to release/exe and release/installer.\nSee README.md for prerequisites and output paths.");
     return;
   }
   if (args.some(arg => arg !== "--exe-only")) throw new Error("Unknown option. Use --exe-only or --help.");
@@ -81,9 +119,13 @@ export function main(args = process.argv.slice(2)) {
     throw new Error(`No Windows setup executable was produced in ${path.join(release, "bundle", "nsis")}`);
   }
 
-  console.log(`Portable exe: ${publish("exe", [exe])[0]}`);
+  const portable = publish("exe", [exe])[0];
+  console.log(`Portable exe: ${portable}`);
+
   if (!exeOnly) {
-    for (const installer of publish("installer", installers)) console.log(`Installer: ${installer}`);
+    const publishedInstallers = publish("installer", installers);
+    for (const installer of publishedInstallers) console.log(`Installer: ${installer}`);
+    publishRelease(packageVersion(), portable, publishedInstallers);
   }
 }
 

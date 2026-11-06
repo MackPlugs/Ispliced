@@ -12,6 +12,13 @@ export interface IsplicedConfig {
 
   /** Whether to trim the MP3 encoder/decoder delay off the start of exported samples. */
   trimDelay: boolean;
+
+  /** Whether to detect the key of downloaded loops and offer to add it to their names. */
+  labelDownloads: boolean;
+
+  /** Preview playback volume, 0…1. */
+  volume: number;
+
   darkMode: boolean;
   checkUpdates: boolean;
 
@@ -21,7 +28,7 @@ export interface IsplicedConfig {
   configured: boolean;
 }
 
-let globalCfg: IsplicedConfig;
+let globalCfg: IsplicedConfig = defaultCfg();
 let saveQueue: Promise<void> = Promise.resolve();
 
 function defaultCfg(): IsplicedConfig {
@@ -30,6 +37,8 @@ function defaultCfg(): IsplicedConfig {
     darkMode: true,
     placeholders: false,
     trimDelay: true,
+    labelDownloads: false,
+    volume: 0.8,
     checkUpdates: true,
     skippedUpdateVersion: "",
     configured: false
@@ -100,29 +109,22 @@ export async function saveConfig() {
   await write;
 }
 
-/**
- * Represents the synchronized state between a React component and the configuration object.
- */
-interface ConfigSyncedState<T> {
-  key: keyof IsplicedConfig;
-  state: T;
-  setState: React.Dispatch<React.SetStateAction<T>>
+/** The synchronized state between a React component and one configuration key. */
+interface ConfigSyncedState<K extends keyof IsplicedConfig> {
+  key: K;
+  state: IsplicedConfig[K];
+  setState: React.Dispatch<React.SetStateAction<IsplicedConfig[K]>>;
 }
 
-/**
- * Allows for synchronization between React components and a single key-value pair of the configuration object.
- */
-export function useCfgSyncedState<T>(key: keyof IsplicedConfig) {
-  const [state, setState] = useState<T>(globalCfg[key] as T);
-  return { key, state, setState }
+/** Synchronizes a React state pair with one key of the configuration object. */
+export function useCfgSyncedState<K extends keyof IsplicedConfig>(key: K): ConfigSyncedState<K> {
+  const [state, setState] = useState<IsplicedConfig[K]>(globalCfg[key]);
+  return { key, state, setState };
 }
 
-/**
- * Changes the value of the key specified by the target `state` to the given `value`,
- * synchronizing it with the configuration object and the config file.
- */
-export function mutateCfgSync<T>(value: T, state: ConfigSyncedState<T>) {
-  (globalCfg as any)[state.key] = value;
+/** Changes one configuration value and writes the result to disk. */
+export function mutateCfgSync<K extends keyof IsplicedConfig>(value: IsplicedConfig[K], state: ConfigSyncedState<K>) {
+  globalCfg[state.key] = value;
   state.setState(value);
   return saveConfig();
 }

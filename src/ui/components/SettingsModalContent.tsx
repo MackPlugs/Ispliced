@@ -31,12 +31,34 @@ function SettingRow({ title, description, control, children }: {
   );
 }
 
+/** A settings row whose control is an on/off switch. */
+function SwitchSetting({ title, description, checked, onChange, label }: {
+  title: string,
+  description: string,
+  checked: boolean,
+  onChange: (enabled: boolean) => void,
+  label: string
+}) {
+  return (
+    <SettingRow
+      title={title}
+      description={description}
+      control={
+        <Switch isSelected={checked} onChange={onChange} aria-label={label}>
+          <SwitchControl><SwitchThumb /></SwitchControl>
+        </Switch>
+      }
+    />
+  );
+}
+
 export default function SettingsModalContent({ onClose }: { onClose: () => void }) {
-  const sampleDir = useCfgSyncedState<string>("sampleDir");
-  const placeholders = useCfgSyncedState<boolean>("placeholders");
-  const trimDelay = useCfgSyncedState<boolean>("trimDelay");
-  const darkMode = useCfgSyncedState<boolean>("darkMode");
-  const checkUpdates = useCfgSyncedState<boolean>("checkUpdates");
+  const sampleDir = useCfgSyncedState("sampleDir");
+  const placeholders = useCfgSyncedState("placeholders");
+  const trimDelay = useCfgSyncedState("trimDelay");
+  const labelDownloads = useCfgSyncedState("labelDownloads");
+  const darkMode = useCfgSyncedState("darkMode");
+  const checkUpdates = useCfgSyncedState("checkUpdates");
 
   async function closeFirstTimeSetup() {
     // Do not dismiss setup until both the folder and configured flag are on
@@ -93,60 +115,44 @@ export default function SettingsModalContent({ onClose }: { onClose: () => void 
             </div>
           </SettingRow>
 
-          <SettingRow
+          <SwitchSetting
             title="Placeholder files"
             description="Drag samples into your DAW before they finish downloading. Some DAWs may not like this."
-            control={
-              <Switch
-                isSelected={ cfg().placeholders }
-                onChange={ x => mutateCfgSync(x, placeholders) }
-                aria-label="Enable placeholder files"
-              >
-                <SwitchControl><SwitchThumb /></SwitchControl>
-              </Switch>
-            }
+            checked={cfg().placeholders}
+            onChange={x => mutateCfgSync(x, placeholders)}
+            label="Enable placeholder files"
           />
 
-          <SettingRow
+          <SwitchSetting
             title="Trim MP3 delay"
             description="Remove the silence and pre-ringing that MP3 encoding adds to the start of samples."
-            control={
-              <Switch
-                isSelected={ cfg().trimDelay }
-                onChange={ x => mutateCfgSync(x, trimDelay) }
-                aria-label="Trim MP3 delay"
-              >
-                <SwitchControl><SwitchThumb /></SwitchControl>
-              </Switch>
-            }
+            checked={cfg().trimDelay}
+            onChange={x => mutateCfgSync(x, trimDelay)}
+            label="Trim MP3 delay"
           />
 
-          <SettingRow
+          <SwitchSetting
+            title="Label downloaded loops"
+            description="Detect each loop's key after a download and offer to add it to the file name."
+            checked={cfg().labelDownloads}
+            onChange={x => mutateCfgSync(x, labelDownloads)}
+            label="Label downloaded loops"
+          />
+
+          <SwitchSetting
             title="Check for updates"
             description="Ask to update when a new version of Ispliced is available."
-            control={
-              <Switch
-                isSelected={ cfg().checkUpdates }
-                onChange={ x => mutateCfgSync(x, checkUpdates) }
-                aria-label="Enable update checks"
-              >
-                <SwitchControl><SwitchThumb /></SwitchControl>
-              </Switch>
-            }
+            checked={cfg().checkUpdates}
+            onChange={x => mutateCfgSync(x, checkUpdates)}
+            label="Enable update checks"
           />
 
-          <SettingRow
+          <SwitchSetting
             title="Dark mode"
             description="Use a dark appearance."
-            control={
-              <Switch
-                isSelected={ cfg().darkMode }
-                onChange={ changeDarkMode }
-                aria-label="Enable dark mode"
-              >
-                <SwitchControl><SwitchThumb /></SwitchControl>
-              </Switch>
-            }
+            checked={cfg().darkMode}
+            onChange={changeDarkMode}
+            label="Enable dark mode"
           />
         </div>
       </ModalBody>

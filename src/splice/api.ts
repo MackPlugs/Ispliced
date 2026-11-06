@@ -1,7 +1,5 @@
 import { SpliceSortBy, SpliceSampleType, MusicKey, ChordType, SpliceTag } from "./entities";
 
-export const GRAPHQL_URL = "https://surfaces-graphql.splice.com/graphql"
-
 /**
  * Creates a plain search query, with its only constraint being the filename, as provided
  * via the `query` argument.
@@ -35,7 +33,7 @@ export interface SpliceRequest<T> {
 /**
  * Represents a search GraphQL request to Splice.
  */
-export interface SpliceSearchRequest extends SpliceRequest<{
+export type SpliceSearchRequest = SpliceRequest<{
   attributes: string[],
   bpm?: string,
   max_bpm?: number,
@@ -55,7 +53,7 @@ export interface SpliceSearchRequest extends SpliceRequest<{
   chord_type?: ChordType,
   parent_asset_uuid?: string,
   parent_asset_type?: "pack"
-}>{}
+}>;
 
 export type SpliceSearchResponse<T = SpliceSample> = {
   data: {

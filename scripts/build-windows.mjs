@@ -1,9 +1,10 @@
-import { existsSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const releaseRoot = path.join(root, "release");
 export const target = "x86_64-pc-windows-msvc";
 
 export function buildCommand(visualStudio, exeOnly = false) {
@@ -21,9 +22,30 @@ function run(command, args, options = {}) {
   return result.stdout?.trim();
 }
 
+function installerPaths(release) {
+  const directory = path.join(release, "bundle", "nsis");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter(file => file.endsWith("-setup.exe"))
+    .map(file => path.join(directory, file));
+}
+
+/** Replaces release/<folder> with copies of the given artifacts. */
+function publish(folder, sources) {
+  const directory = path.join(releaseRoot, folder);
+  rmSync(directory, { recursive: true, force: true });
+  mkdirSync(directory, { recursive: true });
+
+  return sources.map(source => {
+    const destination = path.join(directory, path.basename(source));
+    copyFileSync(source, destination);
+    return destination;
+  });
+}
+
 export function main(args = process.argv.slice(2)) {
   if (args.includes("--help")) {
-    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe\n  yarn build:exe      Application exe only\nSee README.md for prerequisites and output paths.");
+    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe\n  yarn build:exe      Application exe only\nArtifacts are copied to release/exe and release/installer.\nSee README.md for prerequisites and output paths.");
     return;
   }
   if (args.some(arg => arg !== "--exe-only")) throw new Error("Unknown option. Use --exe-only or --help.");
@@ -53,12 +75,15 @@ export function main(args = process.argv.slice(2)) {
   const release = path.join(root, "src-tauri", "target", target, "release");
   const exe = path.join(release, "ispliced.exe");
   if (!existsSync(exe)) throw new Error(`Build finished but the application executable was not found: ${exe}`);
-  console.log(`Application: ${exe}`);
+
+  const installers = exeOnly ? [] : installerPaths(release);
+  if (!exeOnly && !installers.length) {
+    throw new Error(`No Windows setup executable was produced in ${path.join(release, "bundle", "nsis")}`);
+  }
+
+  console.log(`Portable exe: ${publish("exe", [exe])[0]}`);
   if (!exeOnly) {
-    const directory = path.join(release, "bundle", "nsis");
-    const installers = existsSync(directory) ? readdirSync(directory).filter(file => file.endsWith("-setup.exe")) : [];
-    if (!installers.length) throw new Error(`No Windows setup executable was produced in ${directory}`);
-    for (const installer of installers) console.log(`Installer: ${path.join(directory, installer)}`);
+    for (const installer of publish("installer", installers)) console.log(`Installer: ${installer}`);
   }
 }
 

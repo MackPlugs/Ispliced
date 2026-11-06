@@ -14,6 +14,14 @@ const TAGS: Record<string, SpliceTag> = Object.fromEntries(
 
 const tagsOf = (...labels: string[]) => labels.map(x => TAGS[x]);
 
+/** The mock tags that stand in for Splice's instrument field. */
+const INSTRUMENT_BY_TAG: Record<string, string> = {
+  synth: "Synth", bass: "Bass", drums: "Drums", guitar: "Guitar", vocal: "Vocals",
+};
+
+const mockInstrument = (tags: SpliceTag[]) =>
+  tags.map(tag => INSTRUMENT_BY_TAG[tag.label]).find(Boolean) ?? null;
+
 /** Builds a `data:` URL holding a JSON amplitude array shaped like a real Splice waveform asset. */
 function mockWaveformUrl(seed: number, kind: "loop" | "decay") {
   const points: number[] = [];
@@ -64,7 +72,7 @@ function mockSample(
     bpm: opts.bpm,
     chord_type: opts.chord,
     duration: opts.duration,
-    instrument: null,
+    instrument: mockInstrument(opts.tags),
     key: opts.key,
     asset_category_slug: opts.category
   };
@@ -92,6 +100,14 @@ const SAMPLES: SpliceSample[] = [
   mockSample(9, "CJD_174_break_loop_chopped_amen.wav",
     { pack: 1, bpm: 174, key: null, chord: null, duration: 5517, category: "loop", tags: tagsOf("drums", "percussion", "trap") }),
 ];
+
+/** Counts how many samples carry each tag, for one taxonomy. */
+function tagSummary(labels: string[], taxonomyUuid: string, taxonomyName: "Instrument" | "Genre" | "Functional Attribute") {
+  return labels.map(label => ({
+    tag: { ...TAGS[label], taxonomy: { uuid: taxonomyUuid, name: taxonomyName } },
+    count: SAMPLES.filter(sample => sample.tags.some(tag => tag.uuid === TAGS[label].uuid)).length
+  }));
+}
 
 /** Returns a canned response mimicking what the Splice search endpoint would return. */
 export function mockSearch(body: string): string {
@@ -126,18 +142,9 @@ export function mockSearch(body: string): string {
       assetsSearch: {
         items: items.slice((page - 1) * limit, page * limit),
         tag_summary: [
-          ...["drums", "synth", "guitar", "vocal"].map(label => ({
-            tag: { ...TAGS[label], taxonomy: { uuid: "tx-instr", name: "Instrument" as const } },
-            count: SAMPLES.filter(sample => sample.tags.some(tag => tag.uuid === TAGS[label].uuid)).length
-          })),
-          ...["trap", "house", "lo-fi", "techno"].map(label => ({
-            tag: { ...TAGS[label], taxonomy: { uuid: "tx-genre", name: "Genre" as const } },
-            count: SAMPLES.filter(sample => sample.tags.some(tag => tag.uuid === TAGS[label].uuid)).length
-          })),
-          ...["kick", "snare", "bass", "melodic", "dry", "wet", "percussion", "fx"].map(label => ({
-            tag: { ...TAGS[label], taxonomy: { uuid: "tx-attribute", name: "Functional Attribute" as const } },
-            count: SAMPLES.filter(sample => sample.tags.some(tag => tag.uuid === TAGS[label].uuid)).length
-          }))
+          ...tagSummary(["drums", "synth", "guitar", "vocal"], "tx-instr", "Instrument"),
+          ...tagSummary(["trap", "house", "lo-fi", "techno"], "tx-genre", "Genre"),
+          ...tagSummary(["kick", "snare", "bass", "melodic", "dry", "wet", "percussion", "fx"], "tx-attribute", "Functional Attribute")
         ],
         response_metadata: { records: items.length },
         pagination_metadata: { currentPage: page, totalPages: Math.ceil(items.length / limit) }

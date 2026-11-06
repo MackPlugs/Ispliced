@@ -10,6 +10,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:browser": "playwright test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
     "build:windows": "node scripts/build-windows.mjs",
     "build:exe": "node scripts/build-windows.mjs --exe-only"
   },
@@ -30,14 +32,20 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9",
     "@playwright/test": "1.58.2",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "eslint": "^9",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^15",
+    "prettier": "^3",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8",
     "vite": "^6.3.5",
     "vitest": "3.2.6"
   }

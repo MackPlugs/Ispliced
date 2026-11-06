@@ -5,8 +5,8 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_http::reqwest;
 use tauri_plugin_shell::ShellExt;
 
-const RELEASES_API_URL: &str = "https://api.github.com/repos/ascpixi/splicedd/releases";
-const DOWNLOAD_URL_PREFIX: &str = "https://github.com/ascpixi/splicedd/releases/download/";
+const RELEASES_API_URL: &str = "https://api.github.com/repos/mackiediablo-art/Ispliced/releases";
+const DOWNLOAD_URL_PREFIX: &str = "https://github.com/mackiediablo-art/Ispliced/releases/download/";
 
 /// Fetches the metadata of the project's GitHub releases, newest first. The raw
 /// release JSON array is returned to the frontend, which decides whether an

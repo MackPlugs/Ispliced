@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { downloadPack, packSamplePath } from "../src/splice/downloadPack";
+import { downloadPack } from "../src/splice/downloadPack";
+import { samplePath } from "../src/splice/samplePath";
 import { createSearchRequest } from "../src/splice/api";
 import { readSearchResponse } from "../src/splice/packs";
 import { mockSearch } from "../src/dev/mock";
@@ -61,8 +62,11 @@ describe("whole pack downloads", () => {
   });
 
   it("keeps untrusted sample names inside the pack directory", () => {
-    const path = packSamplePath({ ...pack, name: "../CON" }, { ...sample, name: "../../bad\\AUX.wav" });
+    const path = samplePath(
+      { ...pack, name: "../CON" },
+      { ...sample, name: "../../bad\\AUX.wav", instrument: "drums", asset_category_slug: "oneshot" },
+    );
     expect(path.split("/")).not.toContain("..");
-    expect(path).toMatch(/bad\/_AUX\.wav$/);
+    expect(path).toMatch(/\/Drums\/One-Shots\/_AUX\.wav$/);
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Alert, AlertContent, AlertDescription, AlertIndicator, AlertTitle, Button, ListBox, ListBoxItem, ListBoxItemIndicator, ModalBackdrop, ModalCloseTrigger, ModalContainer, ModalDialog, Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationNextIcon, PaginationPrevious, PaginationPreviousIcon, ProgressCircle, ProgressCircleFillCircle, ProgressCircleTrack, ProgressCircleTrackCircle, ToggleButton, useOverlayState } from "@heroui/react";
-import { InputGroup, InputGroupInput, InputGroupPrefix, InputGroupSuffix, Modal, Popover, PopoverContent, PopoverDialog, Select, SelectIndicator, SelectPopover, SelectTrigger, SelectValue } from "@heroui/react";
+import { InputGroup, InputGroupInput, InputGroupPrefix, InputGroupSuffix, Modal, Popover, PopoverContent, PopoverDialog, Select, SelectIndicator, SelectPopover, SelectTrigger, SelectValue, toast } from "@heroui/react";
 import { ArrowLeft, ArrowRight, ArrowUpDown, ChevronDown, Disc3, EllipsisVertical, Guitar, Layers, Metronome, MoveRight, Music2, Repeat, Search, Wrench, X } from "lucide-react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { cfg } from "../config";
@@ -19,10 +19,21 @@ import UpdateModal from "./components/UpdateModal";
 import { UpdateInfo, checkForUpdates } from "../updater";
 import KeyScaleSelection from "./components/KeyScaleSelection";
 import BpmSelection, { BpmFilter, BpmFilterType } from "./components/BpmSelection";
-import { SamplePlaybackCancellation, SamplePlaybackContext } from "./playback";
-import { IN_TAURI, checkDirExists } from "../native";
+import { usePlayer } from "./player";
+import PlayerBar from "./components/PlayerBar";
+import { IN_TAURI, applyLoopLabels, checkDirExists, planLoopLabels, LabelProposal } from "../native";
 import { mockSearch } from "../dev/mock";
+import { errorMessage } from "../errors";
 import { FIELD_BUTTON_CLASSES, NO_PRESS_SCALE, TAG_PILL_CLASSES } from "./fieldStyles";
+import { join } from "@tauri-apps/api/path";
+import { safePart } from "../splice/samplePath";
+import LabelDialog from "./components/LabelDialog";
+
+const SEARCH_DEBOUNCE_MS = 250;
+const RESPONSE_CACHE_LIMIT = 64;
+const RANDOM_SEED_LIMIT = 10_000_000_000;
+const SPLICE_RETRY_INTERVAL_MS = 1500;
+const SPLICE_TIMEOUT_MS = 20000;
 
 /**
  * Runs a Splice GraphQL request through the hidden splice.com helper webview
@@ -43,14 +54,14 @@ function spliceSearch(body: string): Promise<string> {
     // Re-emit periodically: the helper webview may not have registered its
     // listener yet (it's still loading splice.com / clearing Cloudflare), and
     // Tauri drops events that have no listener rather than queuing them.
-    const reEmit = setInterval(() => { emit("splice-search", { id, body }); }, 1500);
+    const reEmit = setInterval(() => { emit("splice-search", { id, body }); }, SPLICE_RETRY_INTERVAL_MS);
 
     const settle = () => { clearInterval(reEmit); clearTimeout(timer); unlisten?.(); };
 
     const timer = setTimeout(() => {
       settle();
       reject(new Error("Splice search timed out (the helper webview may still be clearing Cloudflare)."));
-    }, 20000);
+    }, SPLICE_TIMEOUT_MS);
 
     listen<{ id: string, ok: boolean, body?: string, error?: string }>("splice-result", ev => {
       if (ev.payload.id !== id) return;
@@ -98,6 +109,7 @@ function App() {
   const settings = useOverlayState({
     defaultOpen: !cfg().configured
   });
+  const player = usePlayer();
 
   const [bpmType, setBpmType] = useState<BpmFilterType>("exact");
   const [bpm, setBpm] = useState<BpmFilter>();
@@ -125,7 +137,7 @@ function App() {
 
 
   const [sortBy, setSortBy] = useState<SpliceSortBy>("popularity");
-  const [sampleType, setSampleType] = useState<SpliceSampleType | "any">("any")
+  const [sampleType, setSampleType] = useState<SpliceSampleType | "any">("any");
 
   const [knownInstruments, setKnownInstruments] = useState<{name: string, uuid: string}[]>([]);
   const [knownGenres, setKnownGenres] = useState<{name: string, uuid: string}[]>([]);
@@ -150,6 +162,7 @@ function App() {
 
   const downloadBusy = useRef(false);
   const [downloadingPackId, setDownloadingPackId] = useState<string | null>(null);
+  const [labelProposals, setLabelProposals] = useState<LabelProposal[] | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<{
     status: "accent" | "success" | "danger";
     title: string;
@@ -179,12 +192,46 @@ function App() {
       }
       setDownloadNotice({ status: "success", title: "Sample pack downloaded",
         description: `${pack.name} · ${result.saved} samples saved to ${sampleDir}` });
+      void offerLoopLabels(pack, sampleDir);
     } catch (error) {
       setDownloadNotice({ status: "danger", title: "Sample pack download failed",
-        description: error instanceof Error ? error.message : String(error) });
+        description: errorMessage(error) });
     } finally {
       downloadBusy.current = false;
       setDownloadingPackId(null);
+    }
+  }
+
+  /** Proposes key labels for a finished download; nothing is renamed until the user agrees. */
+  async function offerLoopLabels(pack: SpliceSamplePack, folder: string) {
+    if (!cfg().labelDownloads) return;
+
+    try {
+      const packFolder = await join(folder, safePart(pack.name));
+      const proposals = await planLoopLabels(packFolder, "medium");
+      if (proposals.some(proposal => proposal.reason === "")) setLabelProposals(proposals);
+    } catch (error) {
+      console.error("could not plan loop labels:", error);
+    }
+  }
+
+  async function applyLabels(chosen: LabelProposal[]) {
+    setLabelProposals(null);
+
+    try {
+      const report = await applyLoopLabels(chosen.map(proposal => ({
+        path: proposal.path,
+        newName: proposal.newName,
+      })));
+
+      if (report.failed.length) {
+        toast.danger(`${report.renamed.length} labelled, ${report.failed.length} failed`,
+          { description: report.failed[0].reason });
+      } else {
+        toast(`${report.renamed.length} loops labelled`);
+      }
+    } catch (error) {
+      toast.danger(`Labelling failed: ${errorMessage(error)}`);
     }
   }
 
@@ -223,7 +270,7 @@ function App() {
     packFilter != null;
 
   useEffect(() => {
-    const timer = setTimeout(() => { setSearchQuery(query); setSearchRevision(value => value + 1); }, 250);
+    const timer = setTimeout(() => { setSearchQuery(query); setSearchRevision(value => value + 1); }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query]);
 
@@ -236,7 +283,7 @@ function App() {
     const restoring = restoredPage.current !== null;
     const page = restoredPage.current ?? (resetPage ? 1 : currentPage);
     restoredPage.current = null;
-    if (resetPage && !restoring) randomSeed.current = Math.floor(Math.random() * 10000000000).toString();
+    if (resetPage && !restoring) randomSeed.current = Math.floor(Math.random() * RANDOM_SEED_LIMIT).toString();
     if (restoringHistory.current) {
       restoringHistory.current = false;
     } else {
@@ -253,20 +300,6 @@ function App() {
     return () => { searchSequence.current++; };
   }, [view, searchQuery, searchRevision, sortBy, bpm, bpmType, sampleType,
     instruments, genres, tags, currentPage, musicKey, chordType, packFilter]);
-
-  const [smplCancellation, smplSetCancellation] = useState<SamplePlaybackCancellation | null>(null);
-  const pbCtx: SamplePlaybackContext = {
-    cancellation: smplCancellation,
-    setCancellation: smplSetCancellation
-  }
-
-  // Stop any playing sample when the window loses focus (e.g. the user tabs
-  // away or drags a sample into their DAW).
-  useEffect(() => {
-    const stopOnBlur = () => smplCancellation?.();
-    window.addEventListener("blur", stopOnBlur);
-    return () => window.removeEventListener("blur", stopOnBlur);
-  }, [smplCancellation]);
 
   function changePage(n: number) {
     setCurrentPage(n);
@@ -324,7 +357,7 @@ function App() {
     const saved = history.move(direction);
     if (!saved) return;
     searchSequence.current++;
-    pbCtx.cancellation?.();
+    player.pause();
     restoringHistory.current = true;
     restoredPage.current = saved.page;
     pendingScroll.current = saved.scrollTop;
@@ -354,7 +387,7 @@ function App() {
       pending = spliceSearch(body).then(raw => {
         readSearchResponse(raw); // Don't retain failed GraphQL responses.
         responseCache.current.set(body, raw);
-        if (responseCache.current.size > 64) responseCache.current.delete(responseCache.current.keys().next().value!);
+        if (responseCache.current.size > RESPONSE_CACHE_LIMIT) responseCache.current.delete(responseCache.current.keys().next().value!);
         return raw;
       }).finally(() => pendingRequests.current.delete(body));
       pendingRequests.current.set(body, pending);
@@ -365,7 +398,7 @@ function App() {
   function handlePackClick(pack: SpliceSamplePack) {
     saveBrowseBeforeNavigation();
     searchSequence.current++;
-    pbCtx.cancellation?.();
+    player.pause();
     if (view === "packs") {
       packSearch.current = { query, sortBy, bpm, bpmType, sampleType,
         instruments, genres, tags, musicKey, chordType, page: currentPage, randomSeed: randomSeed.current };
@@ -381,7 +414,7 @@ function App() {
     if (view === "packs") return;
     saveBrowseBeforeNavigation();
     searchSequence.current++;
-    pbCtx.cancellation?.();
+    player.pause();
     setPackFilter(null);
     const saved = packSearch.current;
     if (saved) {
@@ -458,7 +491,7 @@ function App() {
         }
       }
       if (!isCurrent()) return;
-      pbCtx.cancellation?.();
+      player.pause();
 
       function findConstraints(name: "Genre" | "Instrument") {
         return data.tag_summary.map(x => x.tag)
@@ -474,7 +507,7 @@ function App() {
           .map(x => ({ uuid: x.uuid, label: x.label }))
       );
     } catch (err) {
-      if (isCurrent()) setSearchError(err instanceof Error ? err.message : String(err));
+      if (isCurrent()) setSearchError(errorMessage(err));
     } finally {
       if (isCurrent()) setSearchLoading(false);
     }
@@ -500,6 +533,11 @@ function App() {
         <UpdateModal update={update} onDismiss={() => setUpdate(null)} />
       }
 
+      { labelProposals != null &&
+        <LabelDialog proposals={labelProposals} onApply={applyLabels}
+          onClose={() => setLabelProposals(null)} />
+      }
+
       <div className="flex items-center justify-between gap-4 mb-2">
         <div className="flex items-center gap-3">
           <div className="flex gap-1" aria-label="Navigation history">
@@ -513,7 +551,7 @@ function App() {
         <nav aria-label="Browse library" className="flex gap-2">
           <Button variant={view === "samples" ? "primary" : "outline"}
             aria-current={view === "samples" ? "page" : undefined}
-            onClick={() => { if (view === "samples") return; saveBrowseBeforeNavigation(); searchSequence.current++; pbCtx.cancellation?.(); setView("samples"); }}>Samples</Button>
+            onClick={() => { if (view === "samples") return; saveBrowseBeforeNavigation(); searchSequence.current++; player.pause(); setView("samples"); }}>Samples</Button>
           <Button variant={view === "packs" ? "primary" : "outline"}
             aria-current={view === "packs" ? "page" : undefined} onClick={showPacks}>Sample packs</Button>
         </nav>
@@ -814,7 +852,7 @@ function App() {
               { view === "packs" ? packs.map(pack => <PackCard key={pack.uuid} pack={pack} onOpen={handlePackClick}
                   onDownload={pack => void handleDownloadPack(pack)} downloading={downloadingPackId === pack.uuid}
                   downloadDisabled={downloadingPackId !== null} />) : results.map(
-                x => <SampleListEntry key={x.uuid} sample={x} onTagClick={handleTagClick} onPackClick={handlePackClick} ctx={pbCtx}/>
+                x => <SampleListEntry key={x.uuid} sample={x} onTagClick={handleTagClick} onPackClick={handlePackClick}/>
               ) }
               </div>
 
@@ -860,6 +898,8 @@ function App() {
           <p className="text-sm text-muted">{packs.length} packs found so far</p>
           <Button variant="outline" isDisabled={searchLoading} onClick={() => setCurrentPage(page => page + 1)}>Load more packs</Button>
         </div>}
+
+      <PlayerBar />
     </main>
   );
 }

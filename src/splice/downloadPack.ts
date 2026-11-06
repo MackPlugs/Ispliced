@@ -1,71 +1,107 @@
 import { createSearchRequest, SpliceSample, SpliceSamplePack } from "./api";
 import { readSearchResponse } from "./packs";
+import { samplePath } from "./samplePath";
+import { errorMessage } from "../errors";
 
 export interface PackDownloadProgress { saved: number; failed: number; found: number; }
 export interface PackDownloadResult extends PackDownloadProgress { errors: string[]; }
 
-function safePart(value: string) {
-  const clean = value.replace(/[<>:"|?*\x00-\x1f /\\]/g, "_").slice(0, 100).replace(/[. ]+$/g, "");
-  if (!clean || clean === "." || clean === "..") return "sample";
-  return /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i.test(clean) ? `_${clean}` : clean;
+const MAX_CONCURRENT_SAVES = 2;
+const MAX_REPORTED_ERRORS = 3;
+
+type SaveSample = (sample: SpliceSample, relativePath: string) => Promise<void>;
+type ReportProgress = (progress: PackDownloadProgress) => void;
+
+interface DownloadState {
+  pack: SpliceSamplePack;
+  search: (body: string) => Promise<string>;
+  save: SaveSample;
+  onProgress: ReportProgress;
+  result: PackDownloadResult;
+  seen: Set<string>;
+  paths: Set<string>;
 }
 
-export function packSamplePath(pack: SpliceSamplePack, sample: SpliceSample) {
-  const parts = sample.name.split(/[/\\]/).filter(part => part && part !== "." && part !== "..");
-  const name = parts.pop() || sample.uuid;
-  const basename = safePart(name.replace(/\.[^.]+$/, ""));
-  return [safePart(pack.name), ...parts.map(safePart), `${basename}.wav`].join("/");
+/** Adds a numeric suffix when another sample already claimed this file name. */
+function claimPath(relativePath: string, taken: Set<string>) {
+  let claimed = relativePath;
+  let suffix = 1;
+
+  while (taken.has(claimed.toLowerCase())) {
+    claimed = relativePath.replace(/\.wav$/, `_${suffix++}.wav`);
+  }
+
+  taken.add(claimed.toLowerCase());
+  return claimed;
 }
 
-/** Fetch every pack page without inheriting the browse filters. Keep only two
- * audio transfers/conversions in memory and wait for every write before returning.
- */
+function packPageRequest(pack: SpliceSamplePack, page: number) {
+  const request = createSearchRequest("");
+  request.variables.parent_asset_uuid = pack.uuid;
+  request.variables.parent_asset_type = "pack";
+  request.variables.sort = "recency";
+  request.variables.page = page;
+  return request;
+}
+
+async function saveOne(state: DownloadState, sample: SpliceSample) {
+  const relativePath = claimPath(samplePath(state.pack, sample), state.paths);
+
+  try {
+    await state.save(sample, relativePath);
+    state.result.saved++;
+  } catch (error) {
+    state.result.failed++;
+    if (state.result.errors.length < MAX_REPORTED_ERRORS) {
+      state.result.errors.push(`${sample.name}: ${errorMessage(error)}`);
+    }
+  }
+
+  state.onProgress({ ...state.result });
+}
+
+/** Keeps two transfers in flight at once and resolves when every write finishes. */
+async function savePage(state: DownloadState, items: SpliceSample[]) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      await saveOne(state, items[next++]);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_SAVES, items.length) }, worker));
+}
+
+/** Fetch every pack page without inheriting the browse filters. */
 export async function downloadPack(
   pack: SpliceSamplePack,
   search: (body: string) => Promise<string>,
-  save: (sample: SpliceSample, relativePath: string) => Promise<void>,
-  onProgress: (progress: PackDownloadProgress) => void,
+  save: SaveSample,
+  onProgress: ReportProgress,
 ): Promise<PackDownloadResult> {
-  const result: PackDownloadResult = { saved: 0, failed: 0, found: 0, errors: [] };
-  const seen = new Set<string>();
-  const paths = new Set<string>();
-  let totalPages = 1;
-  for (let page = 1; page <= totalPages; page++) {
-    const request = createSearchRequest("");
-    request.variables.parent_asset_uuid = pack.uuid;
-    request.variables.parent_asset_type = "pack";
-    request.variables.sort = "recency";
-    request.variables.page = page;
-    const data = readSearchResponse(await search(JSON.stringify(request)));
+  const state: DownloadState = {
+    pack, search, save, onProgress,
+    result: { saved: 0, failed: 0, found: 0, errors: [] },
+    seen: new Set(),
+    paths: new Set(),
+  };
+
+  for (let page = 1, totalPages = 1; page <= totalPages; page++) {
+    const data = readSearchResponse(await search(JSON.stringify(packPageRequest(pack, page))));
     totalPages = data.pagination_metadata.totalPages;
-    const items = data.items.filter(sample => {
-      if (seen.has(sample.uuid)) return false;
-      seen.add(sample.uuid);
+
+    const fresh = data.items.filter(sample => {
+      if (state.seen.has(sample.uuid)) return false;
+      state.seen.add(sample.uuid);
       return true;
     });
-    result.found += items.length;
-    onProgress({ ...result });
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(2, items.length) }, async () => {
-      while (next < items.length) {
-        const sample = items[next++];
-        let relativePath = packSamplePath(pack, sample);
-        const original = relativePath;
-        let suffix = 1;
-        // Windows filenames are case-insensitive, including on a Linux build host.
-        while (paths.has(relativePath.toLowerCase())) relativePath = original.replace(/\.wav$/, `_${suffix++}.wav`);
-        paths.add(relativePath.toLowerCase());
-        try {
-          await save(sample, relativePath);
-          result.saved++;
-        } catch (error) {
-          result.failed++;
-          if (result.errors.length < 3) result.errors.push(`${sample.name}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        onProgress({ ...result });
-      }
-    }));
+
+    state.result.found += fresh.length;
+    state.onProgress({ ...state.result });
+
+    await savePage(state, fresh);
   }
-  if (!result.found) throw new Error("No samples were found in this pack.");
-  return result;
+
+  if (!state.result.found) throw new Error("No samples were found in this pack.");
+  return state.result;
 }

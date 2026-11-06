@@ -19,6 +19,12 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
 tauri-plugin-shell = "2"
+hound = "3"
+rubato = "0.16"
+realfft = "3"
+matrixmultiply = "0.3"
+tract-onnx = "0.21"
+fancy-regex = "0.14"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

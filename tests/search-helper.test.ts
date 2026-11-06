@@ -3,8 +3,9 @@ import { runInNewContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 
 it("the desktop helper fetches repeated request IDs only once and replays completed replies", async () => {
-  const source = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
-  const script = source.match(/const SPLICE_HELPER_INIT: &str = r#"([\s\S]*?)"#;/)![1];
+  const rust = readFileSync(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8");
+  expect(rust).toContain('include_str!("splice-helper.js")');
+  const script = readFileSync(new URL("../src-tauri/src/splice-helper.js", import.meta.url), "utf8");
   let listener!: (message: { payload: { id: string; body: string } }) => Promise<void>;
   let finish!: (response: { ok: boolean; text: () => Promise<string> }) => void;
   const fetch = vi.fn(() => new Promise(resolve => { finish = resolve; }));

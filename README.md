@@ -58,6 +58,12 @@ These additions were made after cloning the original repository:
   rate and the configured MP3 delay trimming.
 - **Whole-pack downloads:** save every sample across every page of a pack as
   24-bit WAV files under the configured sample folder, regardless of browse filters.
+- **Key labels for downloaded loops:** a built-in K10 key detector estimates each
+  loop's key after a pack download and offers to append it to the file name. Only
+  high-confidence results are pre-selected, and nothing is renamed without confirmation.
+- **Persistent preview player:** a bar along the bottom shows the sample that is
+  playing with a pause/play button and a volume slider, and remembers the volume
+  between launches.
 - **Persistent download notifications:** show **Downloading sample pack** while
   work is in progress and **Sample pack downloaded** only after every file has
   been saved. Progress remains visible while navigating between views; failed
@@ -94,9 +100,16 @@ browse history; starting a new search after going back replaces forward history.
 3. Keep the application open while **Downloading sample pack** is displayed.
 4. Wait for **Sample pack downloaded**, which confirms all samples have been saved.
 
-Files are saved in a pack subfolder. Exports use the same decoded preview audio
-as individual drag-and-drop exports, converted to 24-bit WAV with the configured
-MP3 delay trimming. They are not a download of the original source WAV masters.
+With **Label downloaded loops** enabled in Settings, the app then estimates each
+loop's key and opens a review list. Ticked entries are renamed; nothing changes
+until you apply.
+
+Files are saved under the pack name, then the sample's instrument, then `Loops` or
+`One-Shots` — for example `Aventador/Drums/Loops/kick_01.wav`. The instrument comes
+from the sample's Splice metadata, falling back to its own folder name and then to
+`Other` when neither is available. Exports use the same decoded preview audio as
+individual drag-and-drop exports, converted to 24-bit WAV with the configured MP3
+delay trimming. They are not a download of the original source WAV masters.
 
 Only one whole-pack job runs at a time, with at most two audio downloads/conversions
 in flight. If a sample or request fails, the notification reports the failure.
@@ -166,12 +179,17 @@ Both commands discover Visual Studio **2026 (version 18)** using `vswhere`, acti
 its x64 C++ environment, install the locked JavaScript dependencies and compile
 the frontend and Rust application in release mode. They use the MSVC Rust
 toolchain and keep build outputs inside `src-tauri/target`, even when
-`CARGO_TARGET_DIR` is set in your terminal.
+`CARGO_TARGET_DIR` is set in your terminal. Every finished build is then copied
+into `release/`, replacing the previous artifacts:
 
 | Output | Location |
 | --- | --- |
-| Application | `src-tauri/target/x86_64-pc-windows-msvc/release/ispliced.exe` |
-| Installer | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe` |
+| Portable application | `release/exe/ispliced.exe` |
+| Installer | `release/installer/Ispliced_<version>_x64-setup.exe` |
+
+`npm run build:exe` refreshes only `release/exe`; it leaves the last installer in
+place. Intermediate build output stays in
+`src-tauri/target/x86_64-pc-windows-msvc/release/`.
 
 The application executable requires WebView2 on the destination computer. Use
 the NSIS installer for distribution; it handles WebView2 installation when

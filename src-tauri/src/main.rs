@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod files;
+mod keydet;
 mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -16,98 +17,10 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 // Cloudflare's browser check, it can `fetch()` the GraphQL endpoint same-site,
 // and it relays requests/responses to and from the main window over Tauri events.
 // See `capabilities/splice-helper.json` for the (event-only) permissions this
-// remote webview is granted.
+// remote webview is granted, and `splice-helper.js` for the injected script.
 const SPLICE_HELPER_LABEL: &str = "splice-helper";
 const SPLICE_HELPER_URL: &str = "https://splice.com/sounds/search/samples";
-
-const SPLICE_HELPER_INIT: &str = r#"
-(function () {
-  if (window.__spliceHelperReady) return;
-  window.__spliceHelperReady = true;
-
-  var GRAPHQL_URL = "https://surfaces-graphql.splice.com/graphql";
-
-  // Tauri reliably injects __TAURI_INTERNALS__ into capability-granted remote
-  // pages, but the high-level window.__TAURI__ global may not be present. Prefer
-  // the global when available; otherwise build a minimal emit/listen on top of
-  // the internals (the same commands the high-level API uses).
-  function getEventApi() {
-    if (window.__TAURI__ && window.__TAURI__.event) {
-      return window.__TAURI__.event;
-    }
-    var internals = window.__TAURI_INTERNALS__;
-    if (!internals || !internals.invoke || !internals.transformCallback) {
-      return null;
-    }
-    return {
-      emit: function (event, payload) {
-        return internals.invoke("plugin:event|emit", { event: event, payload: payload });
-      },
-      listen: function (event, handler) {
-        return internals.invoke("plugin:event|listen", {
-          event: event,
-          target: { kind: "Any" },
-          handler: internals.transformCallback(handler)
-        });
-      }
-    };
-  }
-
-  function start() {
-    var event = getEventApi();
-    if (!event) { setTimeout(start, 100); return; }
-
-    // The main window retransmits until the helper is ready. A slow request
-    // must not turn each retransmission into another concurrent GraphQL fetch.
-    var requests = new Map();
-    event.listen("splice-search", async function (msg) {
-      var id = msg.payload.id;
-      var body = msg.payload.body;
-      if (requests.has(id)) {
-        var previous = requests.get(id);
-        if (previous) event.emit("splice-result", previous);
-        return;
-      }
-      requests.set(id, null);
-      function reply(payload) {
-        requests.set(id, payload);
-        if (requests.size > 64) {
-          for (var entry of requests) {
-            if (entry[1] !== null) { requests.delete(entry[0]); break; }
-          }
-        }
-        event.emit("splice-result", payload);
-      }
-      var lastErr = null;
-
-      // Cloudflare clearance can take a moment after the page loads, so retry
-      // a few times before giving up.
-      for (var attempt = 0; attempt < 4; attempt++) {
-        try {
-          var resp = await fetch(GRAPHQL_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: body
-          });
-          var text = await resp.text();
-          if (resp.ok) {
-            reply({ id: id, ok: true, body: text });
-            return;
-          }
-          lastErr = "Splice returned HTTP " + resp.status;
-        } catch (e) {
-          lastErr = String(e);
-        }
-        await new Promise(function (r) { setTimeout(r, 700); });
-      }
-
-      reply({ id: id, ok: false, error: lastErr || "unknown error" });
-    });
-  }
-
-  start();
-})();
-"#;
+const SPLICE_HELPER_INIT: &str = include_str!("splice-helper.js");
 
 fn main() {
     // WebKitGTK's DMA-BUF renderer fails on many Linux GPU setups (notably NVIDIA
@@ -139,16 +52,16 @@ fn main() {
             // writer can then safely access config.json through the fs plugin.
             std::fs::create_dir_all(app.path().app_config_dir()?)?;
 
-            WebviewWindowBuilder::new(
-                app,
-                SPLICE_HELPER_LABEL,
-                WebviewUrl::External(SPLICE_HELPER_URL.parse().unwrap()),
-            )
-            .title("splice-helper")
-            .visible(false)
-            .skip_taskbar(true)
-            .initialization_script(SPLICE_HELPER_INIT)
-            .build()?;
+            let helper_url = SPLICE_HELPER_URL
+                .parse()
+                .map_err(|e| format!("invalid splice helper URL: {e}"))?;
+
+            WebviewWindowBuilder::new(app, SPLICE_HELPER_LABEL, WebviewUrl::External(helper_url))
+                .title("splice-helper")
+                .visible(false)
+                .skip_taskbar(true)
+                .initialization_script(SPLICE_HELPER_INIT)
+                .build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -156,6 +69,8 @@ fn main() {
             files::file_exists,
             files::dir_exists,
             files::create_placeholder_file,
+            keydet::plan_loop_labels,
+            keydet::apply_loop_labels,
             updater::fetch_releases,
             updater::install_update
         ])

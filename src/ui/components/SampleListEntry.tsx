@@ -1,20 +1,21 @@
 import { Chip, ProgressCircle, ProgressCircleFillCircle, ProgressCircleTrack, ProgressCircleTrackCircle, Tooltip, TooltipContent, TooltipTrigger, toast } from "@heroui/react";
-import { Clock, Metronome, Music2, Play, Square } from "lucide-react";
+import { Clock, Metronome, Music2, Pause, Play } from "lucide-react";
 
 import { fetch } from "@tauri-apps/plugin-http";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 
-import * as wav from "node-wav";
 import { checkDirExists, checkFileExists, createPlaceholder, IN_TAURI, IS_WINDOWS, WINDOWS_MAX_PATH, writeSampleFile } from "../../native";
 import { join } from "@tauri-apps/api/path";
 
 import { cfg } from "../../config";
 import { DRAG_PREVIEW_ICON } from "../../dragIcon";
-import { SamplePlaybackContext } from "../playback";
+import { PlayingTrack, usePlayer } from "../player";
 import { SpliceTag } from "../../splice/entities";
 import { SpliceSample, SpliceSamplePack } from "../../splice/api";
-import { decodeSpliceAudio, getMp3SampleRate, MP3_START_DELAY } from "../../splice/decoder";
+import { decodeSpliceAudio } from "../../splice/decoder";
+import { decodeToWav } from "../../splice/export";
+import { sampleFileName, samplePath } from "../../splice/samplePath";
 import Waveform from "./Waveform";
 
 const getChordTypeDisplay = (type: string | null) =>
@@ -24,26 +25,43 @@ export type TagClickHandler = (tag: SpliceTag) => void;
 export type PackClickHandler = (pack: SpliceSamplePack) => void;
 
 /**
+ * The shortest candidate path that fits the Windows shell, preferring the full one.
+ * Returns `null` when even the bare file name is too long.
+ */
+async function resolveDragPath(pack: SpliceSamplePack, sample: SpliceSample, sampleDir: string) {
+  const candidates = [samplePath(pack, sample), samplePath(pack, sample, "pack"), sampleFileName(sample)];
+
+  for (const candidate of candidates) {
+    const fullPath = await join(sampleDir, candidate);
+    if (!IS_WINDOWS || fullPath.length <= WINDOWS_MAX_PATH) return { relativePath: candidate, fullPath };
+  }
+
+  return null;
+}
+
+function trackOf(sample: SpliceSample, pack: SpliceSamplePack): PlayingTrack {
+  return {
+    uuid: sample.uuid,
+    name: sample.name.split("/").pop() ?? sample.name,
+    pack: pack.name,
+    durationMs: sample.duration,
+  };
+}
+
+/**
  * Provides a view describing a Splice sample.
  */
 export default function SampleListEntry(
-  { sample, ctx, onTagClick, onPackClick }: {
+  { sample, onTagClick, onPackClick }: {
     sample: SpliceSample,
-    ctx: SamplePlaybackContext,
     onTagClick: TagClickHandler,
     onPackClick: PackClickHandler
   }
 ) {
+  const player = usePlayer();
+  const isCurrent = player.isCurrent(sample.uuid);
+  const playing = isCurrent && player.playing;
   const [fgLoading, setFgLoading] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  if (audioRef.current == null) {
-    audioRef.current = document.createElement("audio");
-  }
-
-  const audio = audioRef.current;
 
   const pack = sample.parents.items[0];
   const packCover = pack
@@ -65,89 +83,30 @@ export default function SampleListEntry(
     fetchAhead.current = fetch(file.url);
   }
 
-  audio.onended = () => {
-    setPlaying(false);
-    setProgress(0);
-  };
-
-  // While a sample is playing, keep its waveform's progress marker in
-  // sync with the audio element.
-  useEffect(() => {
-    if (!playing)
-      return;
-
-    let raf = requestAnimationFrame(function tick() {
-      setProgress(audio.duration > 0 ? audio.currentTime / audio.duration : 0);
-      raf = requestAnimationFrame(tick);
-    });
-
-    return () => cancelAnimationFrame(raf);
-  }, [playing]);
-
-  function stop() {
-    audio.pause();
-    audio.currentTime = 0;
-    setPlaying(false);
-    setProgress(0);
-  }
-
-  async function ensurePlayable() {
-    if (audio.src != "")
-      return;
-
+  async function startPreview(startAt = 0) {
     setFgLoading(true);
     try {
       await ensureAudioDecoded();
+      await player.play(trackOf(sample, pack), new Blob([decodedSample.current!], { type: "audio/mpeg" }), startAt);
+      return true;
+    } catch (err) {
+      console.error("failed to load sample preview:", err);
+      return false;
     } finally {
       setFgLoading(false);
     }
-
-    audio.src = URL.createObjectURL(
-      new Blob([decodedSample.current!], { "type": "audio/mpeg" })
-    );
   }
 
   async function handlePlayClick() {
     if (!IN_TAURI) return;
-    ctx.cancellation?.();
-
-    if (playing)
-      return;
-
-    try {
-      await ensurePlayable();
-    } catch (err) {
-      console.error("failed to load sample preview:", err);
-      return;
-    }
-
-    audio.play();
-    setPlaying(true);
-
-    ctx.setCancellation(() => stop);
+    if (isCurrent) player.toggle();
+    else await startPreview();
   }
 
   async function handleSeek(target: number) {
     if (!IN_TAURI) return;
-    if (!playing) {
-      ctx.cancellation?.();
-
-      try {
-        await ensurePlayable();
-      } catch (err) {
-        console.error("failed to load sample preview:", err);
-        return;
-      }
-
-      audio.play();
-      setPlaying(true);
-      ctx.setCancellation(() => stop);
-    }
-
-    // The audio metadata might not be loaded yet right after setting the
-    // source, so we compute the seek time from the sample's known duration.
-    audio.currentTime = target * (sample.duration / 1000);
-    setProgress(target);
+    if (isCurrent) player.seek(target);
+    else await startPreview(target);
   }
 
   async function ensureAudioDecoded() {
@@ -163,8 +122,6 @@ export default function SampleListEntry(
     decodedSample.current = decodeSpliceAudio(new Uint8Array(data));
   }
 
-  const sanitizePath = (x: string) => x.replace(/[<>:"|?* ]/g, "_");
-
   async function handleDrag(ev: React.MouseEvent<HTMLDivElement, MouseEvent>) {
     if (!IN_TAURI) return;
     // Verify that the parent of the element that we began the dragging from
@@ -174,92 +131,46 @@ export default function SampleListEntry(
       return;
     }
 
-    if (!await checkDirExists(cfg().sampleDir)) {
+    const { sampleDir, placeholders, trimDelay } = cfg();
+
+    if (!await checkDirExists(sampleDir)) {
       toast.danger("Sample folder not found", {
         description: "Choose an existing sample folder in the settings to drag samples into your DAW."
       });
       return;
     }
 
-    // Windows' shell can't drag files whose path is longer than MAX_PATH - the
-    // drag plugin crashes the whole app if we try. Fall back to shorter layouts
-    // (dropping the sample's own subfolders, then the pack folder) when needed.
-    const fileName = sample.name.split("/").pop()!;
-    const candidates = [
-      sanitizePath(pack.name) + "/" + sanitizePath(sample.name),
-      sanitizePath(pack.name) + "/" + sanitizePath(fileName),
-      sanitizePath(fileName)
-    ];
-
-    let samplePath: string | null = null;
-    let fullPath = "";
-    for (const candidate of candidates) {
-      fullPath = await join(cfg().sampleDir, candidate);
-      if (!IS_WINDOWS || fullPath.length <= WINDOWS_MAX_PATH) {
-        samplePath = candidate;
-        break;
-      }
-    }
-
-    if (samplePath == null) {
+    // Windows' shell can't drag files past MAX_PATH - the drag plugin crashes
+    // the whole app if we try, so fall back to shorter layouts.
+    const target = await resolveDragPath(pack, sample, sampleDir);
+    if (target == null) {
       toast.danger("Can't drag this sample", {
         description: "The path to your sample folder is too long for Windows. Choose a shorter one in the settings."
       });
       return;
     }
 
-    const dragParams = {
-      item: [fullPath],
-      icon: DRAG_PREVIEW_ICON
-    };
+    const dragParams = { item: [target.fullPath], icon: DRAG_PREVIEW_ICON };
 
     setFgLoading(true);
     try {
       await ensureAudioDecoded();
 
-      if (!await checkFileExists(cfg().sampleDir, samplePath)) {
-        if (cfg().placeholders) {
-          await createPlaceholder(cfg().sampleDir, samplePath);
-          startDrag(dragParams);
-        }
+      if (await checkFileExists(sampleDir, target.relativePath)) {
+        startDrag(dragParams);
+        return;
+      }
 
-        // decodeAudioData resamples to the context's rate, so decode at the MP3's
-        // own rate - this keeps the output unaltered and MP3_START_DELAY exact.
-        const sampleRate = getMp3SampleRate(decodedSample.current!) ?? 44100;
-        const actx = new OfflineAudioContext(1, 1, sampleRate);
-
-        // decodeAudioData detaches the buffer we give it, so pass a copy to
-        // keep the decoded sample usable for playback afterwards.
-        const samples = await actx.decodeAudioData(decodedSample.current!.buffer.slice(0));
-        const channels: Float32Array[] = [];
-
-        if (samples.length < 60 * samples.sampleRate) {
-          for (let i = 0; i < samples.numberOfChannels; i++) {
-            const chan = samples.getChannelData(i);
-
-            const start = cfg().trimDelay ? MP3_START_DELAY : 0;
-            const end = cfg().trimDelay
-              ? Math.round((sample.duration / 1000) * samples.sampleRate) + start
-              : chan.length;
-
-            channels.push(chan.subarray(start, end));
-          }
-        } else {
-          // processing big samples may result in memory allocation errors (it sure did for me!!)
-          console.warn(`big boi detected of ${samples.length} samples - not pre-processing!`);
-        }
-
-        await writeSampleFile(cfg().sampleDir, samplePath, wav.encode(channels as unknown as ArrayBuffer[], {
-          bitDepth: 24,
-          sampleRate: samples.sampleRate
-        }));
-
-        if (!cfg().placeholders) {
-          startDrag(dragParams);
-        }
-      } else {
+      // A placeholder lets the drag start before the WAV has been written.
+      if (placeholders) {
+        await createPlaceholder(sampleDir, target.relativePath);
         startDrag(dragParams);
       }
+
+      const wavBuffer = await decodeToWav(decodedSample.current!, sample.duration, trimDelay);
+      await writeSampleFile(sampleDir, target.relativePath, wavBuffer);
+
+      if (!placeholders) startDrag(dragParams);
     } catch (err) {
       console.error("failed to prepare sample for dragging:", err);
     } finally {
@@ -306,7 +217,7 @@ export default function SampleListEntry(
         <button
           type="button"
           onClick={handlePlayClick}
-          aria-label={playing ? "Stop playback" : "Play sample"}
+          aria-label={playing ? "Pause sample" : "Play sample"}
           data-draggable="false"
           className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0
                       cursor-pointer transition-colors hover:bg-surface-tertiary
@@ -320,7 +231,7 @@ export default function SampleListEntry(
                 </ProgressCircleTrack>
               </ProgressCircle>
             : playing
-              ? <Square className="size-4" fill="currentColor" />
+              ? <Pause className="size-4" fill="currentColor" />
               : <Play className="size-4" fill="currentColor" />}
         </button>
       </div>
@@ -349,7 +260,7 @@ export default function SampleListEntry(
       {waveformUrl &&
         <Waveform
           src={waveformUrl}
-          progress={progress}
+          progress={isCurrent ? player.progress : 0}
           onSeek={handleSeek}
           className="w-40 h-10 shrink-0"
         />}

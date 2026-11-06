@@ -3,14 +3,14 @@
  * @returns The unscrambled sample, also in the MP3 format.
  */
 export function decodeSpliceAudio(data: Uint8Array) {
-  let sizeData = Array.from(data.subarray(2, 10));
+  const sizeData = Array.from(data.subarray(2, 10));
   let size = 0;
 
   for (let en = sizeData.length - 1; en >= 0; en--) {
     size = (256 * size) + sizeData[en];
   }
 
-  let encodingData = data.subarray(10, 28);
+  const encodingData = data.subarray(10, 28);
 
   const encodeBlkArr = [];
   for (let i = 0; i < encodingData.length; i += 32768) {
@@ -20,7 +20,7 @@ export function decodeSpliceAudio(data: Uint8Array) {
   const encodeBlk = encodeBlkArr.join("");
   const audioData = data.slice(28);
 
-  let passIdx = decodePass(0, audioData, encodeBlk, size) + size;
+  const passIdx = decodePass(0, audioData, encodeBlk, size) + size;
   decodePass(passIdx, audioData, encodeBlk, passIdx + size);
   return audioData;
 }
@@ -72,10 +72,7 @@ function decodePass(i: number, arr: Uint8Array, encodeBlk: string, size: number)
       encblkIdx = 0; // wraparound
     }
 
-    if (i < size) {
-      arr[i] = arr[i] ^ encodeBlk.charCodeAt(encblkIdx);
-    }
-
+    arr[i] = arr[i] ^ encodeBlk.charCodeAt(encblkIdx);
     encblkIdx++;
   }
 

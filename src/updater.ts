@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-shell";
 import { cfg, mutateCfg } from "./config";
-import { IN_TAURI } from "./native";
+import { IN_TAURI, IS_WINDOWS } from "./native";
 
 /**
  * The release notes for a single version, shown in the update dialog's changelog.
@@ -85,11 +85,9 @@ function isNewer(candidate: string, current: string) {
  * most preferred format first. Returns `null` if the release has none.
  */
 function pickInstaller(assets: GithubReleaseAsset[]) {
-  const ua = navigator.userAgent;
-
   const preferences: ((name: string) => boolean)[] =
-    ua.includes("Windows") ? [x => x.endsWith("-setup.exe"), x => x.endsWith(".msi")]
-    : ua.includes("Mac") ? [x => x.endsWith(".dmg")]
+    IS_WINDOWS ? [x => x.endsWith("-setup.exe"), x => x.endsWith(".msi")]
+    : navigator.userAgent.includes("Mac") ? [x => x.endsWith(".dmg")]
     : [x => x.endsWith(".AppImage"), x => x.endsWith(".deb")];
 
   for (const matches of preferences) {
@@ -147,10 +145,6 @@ export async function checkForUpdates(): Promise<UpdateInfo | null> {
   };
 }
 
-function isWindows() {
-  return navigator.userAgent.includes("Windows");
-}
-
 /**
  * Whether "updating" will open the release page in the browser rather than
  * install in-app. Only Windows can install in place -- its NSIS/MSI installers
@@ -161,7 +155,7 @@ function isWindows() {
  * release page to download and install manually.
  */
 export function opensReleasePage(update: UpdateInfo) {
-  return update.installerUrl == null || !isWindows();
+  return update.installerUrl == null || !IS_WINDOWS;
 }
 
 /**
@@ -172,7 +166,7 @@ export function opensReleasePage(update: UpdateInfo) {
 // /src-tauri/src/updater.rs
 export async function installUpdate(update: UpdateInfo) {
   const url = update.installerUrl;
-  if (url == null || !isWindows()) {
+  if (url == null || !IS_WINDOWS) {
     await open(update.releaseUrl);
     return;
   }

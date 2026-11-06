@@ -8,11 +8,13 @@ const fetch = IN_TAURI ? tauriFetch : window.fetch.bind(window);
 /** The flat line shown in place of a waveform that hasn't loaded yet. */
 const EMPTY_WAVEFORM: number[] = new Array(64).fill(0);
 
+const WAVEFORM_WIDTH = 1000;
+const WAVEFORM_HEIGHT = 200;
+const SEEK_STEP = 0.05;
+
 function waveformPath(data: number[]) {
-  const width = 1000;
-  const height = 200;
-  const midHeight = height / 2;
-  const step = width / data.length;
+  const midHeight = WAVEFORM_HEIGHT / 2;
+  const step = WAVEFORM_WIDTH / data.length;
 
   const path = [`M 0 ${midHeight}`];
 
@@ -108,7 +110,7 @@ export default function Waveform(
 
     if (ev.key == "ArrowLeft" || ev.key == "ArrowRight") {
       ev.preventDefault();
-      const delta = ev.key == "ArrowLeft" ? -0.05 : 0.05;
+      const delta = ev.key == "ArrowLeft" ? -SEEK_STEP : SEEK_STEP;
       onSeek(Math.min(Math.max(progress + delta, 0), 1));
     }
   }
@@ -126,7 +128,7 @@ export default function Waveform(
     >
       <svg
         className={`size-full transition-transform duration-500 ${waveform == null ? "scale-y-0" : ""}`}
-        viewBox="0 0 1000 200"
+        viewBox={`0 0 ${WAVEFORM_WIDTH} ${WAVEFORM_HEIGHT}`}
         preserveAspectRatio="none"
       >
         <defs>

@@ -23,11 +23,14 @@ function run(command, args, options = {}) {
   return result.stdout?.trim();
 }
 
-function installerPaths(release) {
+export function pickInstallers(files, version) {
+  return files.filter(file => file.endsWith("-setup.exe") && file.includes(`_${version}_`));
+}
+
+function installerPaths(release, version) {
   const directory = path.join(release, "bundle", "nsis");
   if (!existsSync(directory)) return [];
-  return readdirSync(directory)
-    .filter(file => file.endsWith("-setup.exe"))
+  return pickInstallers(readdirSync(directory), version)
     .map(file => path.join(directory, file));
 }
 
@@ -119,6 +122,7 @@ export function main(args = process.argv.slice(2)) {
     throw new Error("Install or update Rust MSVC first: rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal");
   }
   const exeOnly = args.includes("--exe-only");
+  const version = packageVersion();
   console.log(`Using Visual Studio 2026: ${visualStudio}`);
   run("cmd.exe", ["/d", "/s", "/c", buildCommand(visualStudio, exeOnly)], {
     windowsVerbatimArguments: true,
@@ -130,7 +134,7 @@ export function main(args = process.argv.slice(2)) {
   const exe = path.join(release, "ispliced.exe");
   if (!existsSync(exe)) throw new Error(`Build finished but the application executable was not found: ${exe}`);
 
-  const installers = exeOnly ? [] : installerPaths(release);
+  const installers = exeOnly ? [] : installerPaths(release, version);
   if (!exeOnly && !installers.length) {
     throw new Error(`No Windows setup executable was produced in ${path.join(release, "bundle", "nsis")}`);
   }
@@ -141,7 +145,7 @@ export function main(args = process.argv.slice(2)) {
   if (!exeOnly) {
     const publishedInstallers = publish("installer", installers);
     for (const installer of publishedInstallers) console.log(`Installer: ${installer}`);
-    publishRelease(packageVersion(), portable, publishedInstallers);
+    publishRelease(version, portable, publishedInstallers);
   }
 }
 

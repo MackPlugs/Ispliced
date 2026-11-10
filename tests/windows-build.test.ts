@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildCommand, main, verifyVersions } from "../scripts/build-windows.mjs";
+import { buildCommand, main, pickInstallers, verifyVersions } from "../scripts/build-windows.mjs";
 
 describe("Windows build launcher", () => {
   it("keeps the build on package.json's current version", () => {
     expect(() => verifyVersions()).not.toThrow();
+  });
+
+  it("publishes only the installers for the version being built", () => {
+    const files = [
+      "Ispliced_2.2.0_x64-setup.exe",
+      "Ispliced_2.2.1_x64-setup.exe",
+      "Ispliced_2.2.1_x64-setup.exe.sig",
+      "notes.txt",
+    ];
+
+    expect(pickInstallers(files, "2.2.1")).toEqual(["Ispliced_2.2.1_x64-setup.exe"]);
   });
   it("activates VS 2026 paths with spaces and builds the x64 executable installer", () => {
     const command = buildCommand("C:\\Program Files\\Microsoft Visual Studio\\18\\Community");

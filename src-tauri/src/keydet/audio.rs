@@ -14,6 +14,7 @@ const MAX_RESAMPLE_RATIO: f64 = 2.0;
 const SINC_LENGTH: usize = 128;
 const CUTOFF: f32 = 0.95;
 const OVERSAMPLING: usize = 256;
+const READ_MARGIN_SECONDS: usize = 1;
 
 /// Decodes a written WAV to mono at the model's rate, then tiles or trims it to the
 /// fixed analysis window so the network always sees one input shape.
@@ -26,16 +27,19 @@ fn read_mono(path: &Path) -> Result<Vec<f32>, String> {
     let mut reader =
         WavReader::open(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let spec = reader.spec();
+    let limit = source_frame_limit(spec.sample_rate, spec.channels as usize);
 
     let interleaved = match spec.sample_format {
         SampleFormat::Float => reader
             .samples::<f32>()
+            .take(limit)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("cannot decode {}: {e}", path.display()))?,
         SampleFormat::Int => {
             let scale = 1.0 / (1i64 << (spec.bits_per_sample - 1)) as f32;
             reader
                 .samples::<i32>()
+                .take(limit)
                 .map(|s| s.map(|v| v as f32 * scale))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| format!("cannot decode {}: {e}", path.display()))?
@@ -44,6 +48,12 @@ fn read_mono(path: &Path) -> Result<Vec<f32>, String> {
 
     let mono = mixdown(&interleaved, spec.channels as usize);
     resample(&mono, spec.sample_rate, TARGET_RATE)
+}
+
+/// Interleaved sample count for the analysis window plus one second of resampler margin.
+fn source_frame_limit(rate: u32, channels: usize) -> usize {
+    let frames = (ANALYSIS_SECONDS + READ_MARGIN_SECONDS) as u64 * u64::from(rate);
+    (frames as usize).saturating_mul(channels.max(1))
 }
 
 fn mixdown(interleaved: &[f32], channels: usize) -> Vec<f32> {

@@ -132,6 +132,32 @@ fn has_existing_label(name: &str) -> bool {
     label_pattern().is_match(name).unwrap_or(false)
 }
 
+/// The key or scale stated in a name, formatted the way this app writes it.
+pub(crate) fn existing_key(name: &str) -> Option<String> {
+    let captures = label_pattern().captures(name).ok()??;
+    let note = captures.get(1)?.as_str().to_uppercase();
+    let accidental = captures.get(2).map(|part| part.as_str()).unwrap_or("");
+    let tag = captures.get(3)?.as_str().to_lowercase();
+
+    let mode = if tag.starts_with("maj") {
+        "maj"
+    } else if tag == "m" || tag.starts_with("min") {
+        "min"
+    } else {
+        return Some(format!("{note}{accidental} {}", capitalise(&tag)));
+    };
+
+    Some(format!("{note}{accidental}{mode}"))
+}
+
+fn capitalise(value: &str) -> String {
+    let mut characters = value.chars();
+    match characters.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + characters.as_str(),
+        None => String::new(),
+    }
+}
+
 fn label_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| {

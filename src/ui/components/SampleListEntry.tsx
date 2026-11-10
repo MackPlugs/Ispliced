@@ -1,7 +1,6 @@
 import { Chip, ProgressCircle, ProgressCircleFillCircle, ProgressCircleTrack, ProgressCircleTrackCircle, Tooltip, TooltipContent, TooltipTrigger, toast } from "@heroui/react";
-import { Clock, Metronome, Music2, Pause, Play } from "lucide-react";
+import { Clock, Download, Metronome, Music2, Pause, Play } from "lucide-react";
 
-import { fetch } from "@tauri-apps/plugin-http";
 import { useRef, useState } from "react";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 
@@ -10,11 +9,14 @@ import { join } from "@tauri-apps/api/path";
 
 import { cfg } from "../../config";
 import { DRAG_PREVIEW_ICON } from "../../dragIcon";
-import { PlayingTrack, usePlayer } from "../player";
+import { errorMessage } from "../../errors";
+import { usePlayer, usePlayerProgress } from "../player";
+import { packOf, trackOf } from "../sampleTrack";
 import { SpliceTag } from "../../splice/entities";
 import { SpliceSample, SpliceSamplePack } from "../../splice/api";
-import { decodeSpliceAudio } from "../../splice/decoder";
 import { decodeToWav } from "../../splice/export";
+import { loadSampleAudio } from "../../splice/sampleAudio";
+import { savePackSample } from "../../splice/saveSample";
 import { sampleFileName, samplePath } from "../../splice/samplePath";
 import Waveform from "./Waveform";
 
@@ -39,21 +41,14 @@ async function resolveDragPath(pack: SpliceSamplePack, sample: SpliceSample, sam
   return null;
 }
 
-function trackOf(sample: SpliceSample, pack: SpliceSamplePack): PlayingTrack {
-  return {
-    uuid: sample.uuid,
-    name: sample.name.split("/").pop() ?? sample.name,
-    pack: pack.name,
-    durationMs: sample.duration,
-  };
-}
-
 /**
  * Provides a view describing a Splice sample.
  */
 export default function SampleListEntry(
-  { sample, onTagClick, onPackClick }: {
+  { sample, selected, onToggleSelected, onTagClick, onPackClick }: {
     sample: SpliceSample,
+    selected: boolean,
+    onToggleSelected: () => void,
     onTagClick: TagClickHandler,
     onPackClick: PackClickHandler
   }
@@ -61,9 +56,11 @@ export default function SampleListEntry(
   const player = usePlayer();
   const isCurrent = player.isCurrent(sample.uuid);
   const playing = isCurrent && player.playing;
+  const progress = usePlayerProgress(isCurrent);
   const [fgLoading, setFgLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const pack = sample.parents.items[0];
+  const pack = packOf(sample);
   const packCover = pack
     ? pack.files.find(x => x.asset_file_type_slug == "cover_image")?.url
     : "img/missing-cover.png";
@@ -72,22 +69,17 @@ export default function SampleListEntry(
 
   const decodedSample = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
-  const fetchAhead = useRef<Promise<Response> | null>(null);
-  function startFetching() {
+  // Warming the cache on hover makes the first play start immediately.
+  function prefetch() {
     if (!IN_TAURI) return; // Browser fixtures contain no playable preview audio.
-    if (fetchAhead.current != null)
-      return;
-
-    const file = sample.files.find(x => x.asset_file_type_slug == "preview_mp3")!;
-
-    fetchAhead.current = fetch(file.url);
+    void loadSampleAudio(sample).catch(() => {});
   }
 
   async function startPreview(startAt = 0) {
     setFgLoading(true);
     try {
-      await ensureAudioDecoded();
-      await player.play(trackOf(sample, pack), new Blob([decodedSample.current!], { type: "audio/mpeg" }), startAt);
+      const bytes = await ensureAudioDecoded();
+      await player.play(trackOf(sample, pack), new Blob([bytes], { type: "audio/mpeg" }), startAt);
       return true;
     } catch (err) {
       console.error("failed to load sample preview:", err);
@@ -109,17 +101,34 @@ export default function SampleListEntry(
     else await startPreview(target);
   }
 
-  async function ensureAudioDecoded() {
-    if (decodedSample.current != null)
-      return;
+  async function handleDownload() {
+    if (!IN_TAURI || saving) return;
 
-    if (fetchAhead.current == null) {
-      startFetching();
+    const { sampleDir, trimDelay } = cfg();
+    if (!await checkDirExists(sampleDir)) {
+      toast.danger("Sample folder not found", {
+        description: "Choose an existing sample folder in the settings before downloading."
+      });
+      return;
     }
 
-    const resp = await fetchAhead.current!;
-    const data = await resp.arrayBuffer();
-    decodedSample.current = decodeSpliceAudio(new Uint8Array(data));
+    setSaving(true);
+    try {
+      await savePackSample(sample, samplePath(pack, sample), sampleDir, trimDelay);
+      toast(`Saved ${sample.name.split("/").pop()}`);
+    } catch (error) {
+      toast.danger("Could not save this sample", { description: errorMessage(error) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function ensureAudioDecoded() {
+    if (decodedSample.current != null)
+      return decodedSample.current;
+
+    decodedSample.current = await loadSampleAudio(sample);
+    return decodedSample.current;
   }
 
   async function handleDrag(ev: React.MouseEvent<HTMLDivElement, MouseEvent>) {
@@ -154,7 +163,7 @@ export default function SampleListEntry(
 
     setFgLoading(true);
     try {
-      await ensureAudioDecoded();
+      const bytes = await ensureAudioDecoded();
 
       if (await checkFileExists(sampleDir, target.relativePath)) {
         startDrag(dragParams);
@@ -167,7 +176,7 @@ export default function SampleListEntry(
         startDrag(dragParams);
       }
 
-      const wavBuffer = await decodeToWav(decodedSample.current!, sample.duration, trimDelay);
+      const wavBuffer = await decodeToWav(bytes, sample.duration, trimDelay);
       await writeSampleFile(sampleDir, target.relativePath, wavBuffer);
 
       if (!placeholders) startDrag(dragParams);
@@ -179,10 +188,19 @@ export default function SampleListEntry(
   }
 
   return (
-    <div onMouseOver={startFetching}
+    <div onMouseOver={prefetch}
       className={`group flex w-full px-3 py-2 gap-6 rounded-2xl transition-colors
                     items-center hover:bg-surface-secondary cursor-grab select-none`}
     >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelected}
+        aria-label={`Select ${sample.name}`}
+        data-draggable="false"
+        className="size-4 shrink-0 cursor-pointer"
+      />
+
       { /* when loading, set the cursor for everything to a waiting icon */}
       {fgLoading && <style> {`* { cursor: wait }`} </style>}
 
@@ -234,6 +252,26 @@ export default function SampleListEntry(
               ? <Pause className="size-4" fill="currentColor" />
               : <Play className="size-4" fill="currentColor" />}
         </button>
+
+        <button
+          type="button"
+          onClick={handleDownload}
+          aria-label={`Download ${sample.name}`}
+          data-draggable="false"
+          disabled={saving}
+          className="flex items-center justify-center w-8 h-8 rounded-full shrink-0
+                     cursor-pointer transition-colors hover:bg-surface-tertiary
+                     disabled:opacity-50 disabled:cursor-wait"
+        >
+          {saving
+            ? <ProgressCircle aria-label="Saving sample..." className="h-5" isIndeterminate>
+                <ProgressCircleTrack>
+                  <ProgressCircleTrackCircle />
+                  <ProgressCircleFillCircle />
+                </ProgressCircleTrack>
+              </ProgressCircle>
+            : <Download className="size-4" />}
+        </button>
       </div>
 
       { /* sample name + tags */}
@@ -260,7 +298,7 @@ export default function SampleListEntry(
       {waveformUrl &&
         <Waveform
           src={waveformUrl}
-          progress={isCurrent ? player.progress : 0}
+          progress={progress}
           onSeek={handleSeek}
           className="w-40 h-10 shrink-0"
         />}

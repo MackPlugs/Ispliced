@@ -96,3 +96,80 @@ export async function planLoopLabels(folder: string, minConfidence: string) {
 export async function applyLoopLabels(pairs: { path: string; newName: string }[]) {
   return invoke<LabelReport>("apply_loop_labels", { pairs });
 }
+
+/** One audio file in the user's sample folder. */
+export type LibraryEntry = {
+  path: string;
+  name: string;
+  pack: string;
+  instrument: string;
+  kind: "loop" | "one-shot" | "other";
+  bpm: number | null;
+  key: string | null;
+  durationMs: number;
+  bytes: number;
+  favorite: boolean;
+  modified: number;
+  hash: string | null;
+  /** Base64 spectral profile used by find_similar; opaque to the UI. */
+  embedding: string | null;
+};
+
+export type LibraryIndex = {
+  folder: string;
+  scannedAt: number;
+  entries: LibraryEntry[];
+};
+
+/** Rebuilds the index for `folder` and stores it. */
+export async function scanLibrary(folder: string) {
+  return invoke<LibraryIndex>("scan_library", { folder });
+}
+
+/** Stops the running scan; the previous index is kept. */
+export async function cancelLibraryScan() {
+  await invoke("cancel_library_scan");
+}
+
+export type ScanProgress = { processed: number; total: number };
+
+/** The last stored index, or null when the folder has never been scanned. */
+export async function loadLibrary() {
+  return invoke<LibraryIndex | null>("load_library");
+}
+
+/** One local audio file analysed for a catalogue match. */
+export type LocalLoopAnalysis = {
+  path: string;
+  name: string;
+  key: string | null;
+  bpm: number | null;
+  durationMs: number;
+};
+
+/** Detects the key and tempo of a file the user dropped into the loop matcher. */
+export async function analyzeLocalLoop(path: string) {
+  return invoke<LocalLoopAnalysis>("analyze_local_loop", { path });
+}
+
+/** Marks one indexed file as a favourite and returns the updated index. */
+export async function setLibraryFavorite(path: string, favorite: boolean) {
+  return invoke<LibraryIndex>("set_library_favorite", { path, favorite });
+}
+
+/** One audio file that sounds close to the requested sample. */
+export type SimilarMatch = {
+  path: string;
+  name: string;
+  pack: string;
+  instrument: string;
+  score: number;
+};
+
+/** Which half of the audio profile a similarity search should compare. */
+export type SimilarMode = "harmonic" | "rhythmic" | "combined";
+
+/** Ranks indexed files by similarity to `path`. */
+export async function findSimilar(path: string, limit: number, mode: SimilarMode = "combined") {
+  return invoke<SimilarMatch[]>("find_similar", { path, limit, mode });
+}

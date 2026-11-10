@@ -4,14 +4,9 @@ import {
   Slider, SliderFill, SliderThumb, SliderTrack,
   Tab, TabIndicator, TabList, TabPanel, Tabs, TextField
 } from "@heroui/react";
+import type { BpmFilter, BpmFilterType } from "../bpm";
 
-export type BpmFilterType = "exact" | "range";
-
-export interface BpmFilter {
-  minBpm?: number;
-  maxBpm?: number;
-  bpm?: string;
-}
+export type { BpmFilter, BpmFilterType } from "../bpm";
 
 const MIN_BPM = 1;
 const MAX_BPM = 300;

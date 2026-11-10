@@ -1,5 +1,5 @@
 import { exists, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { BaseDirectory } from "@tauri-apps/api/path";
+import { BaseDirectory, downloadDir } from "@tauri-apps/api/path";
 import { useState } from "react";
 import { IN_TAURI } from "./native";
 
@@ -18,6 +18,15 @@ export interface IsplicedConfig {
 
   /** Preview playback volume, 0…1. */
   volume: number;
+
+  /** Whether previews are stretched to `targetBpm`. */
+  tempoLock: boolean;
+
+  /** The BPM previews are stretched to when tempo lock is on. */
+  targetBpm: number;
+
+  /** Whether the window stays above other applications. */
+  alwaysOnTop: boolean;
 
   darkMode: boolean;
   checkUpdates: boolean;
@@ -39,6 +48,9 @@ function defaultCfg(): IsplicedConfig {
     trimDelay: true,
     labelDownloads: false,
     volume: 0.8,
+    tempoLock: false,
+    targetBpm: 120,
+    alwaysOnTop: false,
     checkUpdates: true,
     skippedUpdateVersion: "",
     configured: false
@@ -72,10 +84,13 @@ export async function loadConfig() {
   }
 
   globalCfg = defaultCfg();
+  let loadFailed = false;
 
   try {
-    if (!await exists("config.json", { baseDir: BaseDirectory.AppConfig }))
+    if (!await exists("config.json", { baseDir: BaseDirectory.AppConfig })) {
+      await applyDefaultSampleDir();
       return;
+    }
 
     const raw = await readTextFile("config.json", {
       baseDir: BaseDirectory.AppConfig,
@@ -83,8 +98,31 @@ export async function loadConfig() {
     globalCfg = { ...defaultCfg(), ...JSON.parse(raw) };
   } catch (err) {
     // A missing, unreadable, or malformed config must never prevent the UI
-    // from mounting. Keep the defaults and allow the next save to repair it.
+    // from mounting. Keep the defaults and let setup or the next save repair it.
     console.error("failed to load config; using defaults:", err);
+    loadFailed = true;
+  }
+
+  // Do not overwrite a file that merely failed to read this launch.
+  if (!loadFailed) await applyDefaultSampleDir();
+}
+
+/**
+ * New installs (and old configs with no folder) save into the user's Downloads
+ * folder. Once written, it behaves like any other setting and is only changed
+ * by the user in Settings.
+ */
+async function applyDefaultSampleDir() {
+  if (globalCfg.sampleDir.trim()) return;
+
+  try {
+    const folder = await downloadDir();
+    if (!folder) return;
+
+    globalCfg = { ...globalCfg, sampleDir: folder, configured: true };
+    await saveConfig();
+  } catch (err) {
+    console.error("could not resolve the Downloads folder:", err);
   }
 }
 

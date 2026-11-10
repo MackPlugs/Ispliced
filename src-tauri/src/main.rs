@@ -3,6 +3,8 @@
 
 mod files;
 mod keydet;
+mod library;
+mod rhythm;
 mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -71,6 +73,12 @@ fn main() {
             files::create_placeholder_file,
             keydet::plan_loop_labels,
             keydet::apply_loop_labels,
+            keydet::analyze_local_loop,
+            library::scan_library,
+            library::cancel_library_scan,
+            library::load_library,
+            library::set_library_favorite,
+            library::find_similar,
             updater::fetch_releases,
             updater::install_update
         ])

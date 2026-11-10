@@ -94,7 +94,7 @@ export default function SettingsModalContent({ onClose }: { onClose: () => void 
         <div className="divide-y divide-separator">
           <SettingRow
             title="Sample folder"
-            description="Downloaded samples are saved here. Drags into your DAW read from this folder."
+            description="Downloaded samples are saved here. Defaults to your Downloads folder until you change it; drags into your DAW read from this folder."
           >
             <div className="flex gap-2 mt-3">
               <InputGroup className="flex-1">

@@ -1,4 +1,5 @@
 import { SpliceSamplePack } from "../../splice/api";
+import { packDetails } from "../packDetails";
 
 export default function PackCard({ pack, onOpen, onDownload, downloading, downloadDisabled }: {
   pack: SpliceSamplePack;
@@ -19,7 +20,7 @@ export default function PackCard({ pack, onOpen, onDownload, downloading, downlo
         className="aspect-square w-full object-cover" />
       <div className="p-4 space-y-1">
         <h2 className="font-medium line-clamp-2">{pack.name}</h2>
-        <p className="text-sm text-muted">View samples →</p>
+        <p className="text-sm text-muted line-clamp-1">{packDetails(pack) || "View samples"}</p>
       </div>
     </button>
     <button type="button" disabled={downloadDisabled} onClick={() => onDownload(pack)}

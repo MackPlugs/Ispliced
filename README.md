@@ -45,6 +45,10 @@ These additions were made after cloning the original repository:
   is retained so saved settings remain available.
 - **Sample packs tab:** a dedicated artwork grid with pack-name search. The
   sample search filters and sorting controls are also available when finding packs.
+- **Pack details and tag exclusion:** pack cards show the sample count, provider and
+  genre, and the tag row has an **Exclude** mode that filters tags out instead of in.
+- **Saved searches:** name the current query, filters and view, then reload them from
+  the bookmark button. Saved searches live in `searches.json` beside the config.
 - **Pack-to-sample navigation:** open a pack to browse all of its samples,
   with pagination, then return to the pack search with its filters restored.
 - **Faster pack filtering:** return the first matching sample page without waiting
@@ -64,6 +68,33 @@ These additions were made after cloning the original repository:
 - **Persistent preview player:** a bar along the bottom shows the sample that is
   playing with a pause/play button and a volume slider, and remembers the volume
   between launches.
+- **Tempo-locked preview:** the player stretches a loop to a target BPM with its
+  pitch preserved, so previews sit in time with the project. The target and the
+  lock state are remembered.
+- **Loop, A/B and always-on-top:** loop a preview, flip between the last two
+  samples with A/B, and pin the window above other applications.
+- **Per-sample and batch downloads:** every result row has a download button next
+  to play, and multi-selected rows download together with a shared progress
+  notice.
+- **Local library view:** the **Library** tab indexes the sample folder and shows
+  pack, instrument, loop type, key and BPM for every file, with search,
+  favourites, duplicate detection and spectral "find similar", plus drag-to-DAW.
+- **Library filters and sorting:** narrow the index by instrument, loop type, key
+  and BPM range, and click any column header to sort. Facets combine with AND
+  while values inside one facet combine with OR.
+- **Named collections:** save selected library files into named collections,
+  reopen them from the collection picker, and see which saved paths are missing
+  from the current folder.
+- **Catalogue loop match:** drop or choose a local WAV loop in the **Loop match**
+  tab; its key and tempo are detected locally and turned into a catalogue search.
+- **Filter-wide exclusion:** **Exclude** now applies to instruments and genres as
+  well as tag pills, so whole families of sounds can be filtered out.
+- **Tempo from file names:** when the catalogue leaves a sample's BPM empty, the
+  player and the library recover it from names such as `STCR2_DMDH_125_Vocal`.
+- **Preview next/previous:** step through the current result list from the player
+  bar without leaving the keyboard or reopening rows.
+- **Harmonic, rhythmic or combined similarity:** the library's similar-sounds
+  view compares timbre, groove, or a weighted mix of both.
 - **Persistent download notifications:** show **Downloading sample pack** while
   work is in progress and **Sample pack downloaded** only after every file has
   been saved. Progress remains visible while navigating between views; failed
@@ -78,7 +109,9 @@ These additions were made after cloning the original repository:
 - **Manual Windows builds on GitHub:** a workflow that uploads the executable
   and installer as downloadable artifacts without publishing a release.
 - **Automated checks:** unit tests for search, pack pagination, downloads, WAV
-  conversion, navigation and build commands, plus browser tests for the UI.
+  conversion, navigation, library filters and build commands, component tests
+  for the UI, browser tests for the browsing flows, and a CI workflow that runs
+  linting, the frontend build, both test suites and the Rust tests.
 
 ## Browse samples and packs
 
@@ -88,6 +121,12 @@ containing matching samples. If more matching sample pages remain, choose
 **Load more packs** to continue discovering packs. A name search with audio
 filters may need more pages before the desired pack appears.
 
+Tick a row's checkbox to select samples and use **Download** to save the whole
+selection; each row also has its own download button next to **play**. Press
+**Exclude** above the filters to switch instrument, genre and tag clicks from
+including to excluding; excluded entries are struck through. The **bookmark**
+button names the current search so you can reload it later.
+
 Click a pack to open its complete sample list. Discovery filters are cleared
 when opening it so all its samples are available. **Back to packs** restores the
 search used to find it. The arrows at the top move backward and forward through
@@ -95,7 +134,8 @@ browse history; starting a new search after going back replaces forward history.
 
 ## Download a whole pack
 
-1. Choose an existing **Sample folder** in Settings.
+1. The **Sample folder** defaults to your user **Downloads** folder. Choose a
+   different existing folder in Settings if you prefer.
 2. Select **Download whole pack** on a pack card or in an open pack's header.
 3. Keep the application open while **Downloading sample pack** is displayed.
 4. Wait for **Sample pack downloaded**, which confirms all samples have been saved.
@@ -115,6 +155,35 @@ Only one whole-pack job runs at a time, with at most two audio downloads/convers
 in flight. If a sample or request fails, the notification reports the failure.
 You can retry the pack; files at the same export paths are replaced. Browser
 mock mode does not download audio or write files.
+
+## Browse your library
+
+Open **Library** to index the sample folder you download into. **Scan folder**
+rebuilds the index and shows progress while it hashes and analyses each file;
+**Cancel** stops it and keeps the previous index. Each row shows the pack,
+instrument, loop type, key and BPM parsed from the file name. Star a row to mark
+it a favourite, and **Favourites** narrows the list to those stars. **Duplicates**
+shows files whose contents match, badged with how many copies exist.
+
+Filter by instrument, type, key or BPM range, and click a column header to sort
+by it. **Clear filters** resets the row. Use the checkboxes to select files, then
+**Add selected** to place them in a named collection; collections persist in
+`collections.json` and list saved paths that have disappeared from the folder.
+
+The waveform icon on a row opens **similar sounds**, ranked by timbre, rhythm or a
+combination of both against the rest of the index. Drag any row into your DAW to
+use it. The index is stored next to `config.json`, favourites live in
+`favorites.json`, and all of it survives restarts.
+
+## Match a local loop
+
+Open **Loop match** and drop a WAV file onto the page, or click the drop area to
+choose one. The app detects the key with K10 and reads the tempo from the file
+name, falling back to onset analysis. Adjust the detected BPM or the tempo
+tolerance, then choose **Find matching samples** to search the catalogue for loops
+in that key and tempo. Analysis stays on your machine; only the resulting catalogue
+search leaves it. Other formats are rejected with a clear message while local
+analysis remains WAV-based.
 
 ## Development
 
@@ -138,7 +207,7 @@ yarn tauri dev
 | Command | Purpose |
 | --- | --- |
 | `yarn build` | TypeScript checking and production frontend build |
-| `yarn test` | Unit tests |
+| `yarn test` | Unit and component tests |
 | `yarn test:browser` | Browser tests for navigation, filtering and download notifications |
 | `npm run build:windows` | Windows application executable and NSIS installer |
 | `npm run build:exe` | Windows application executable only |

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildCommand, main } from "../scripts/build-windows.mjs";
+import { buildCommand, main, verifyVersions } from "../scripts/build-windows.mjs";
 
 describe("Windows build launcher", () => {
+  it("keeps the build on package.json's current version", () => {
+    expect(() => verifyVersions()).not.toThrow();
+  });
   it("activates VS 2026 paths with spaces and builds the x64 executable installer", () => {
     const command = buildCommand("C:\\Program Files\\Microsoft Visual Studio\\18\\Community");
     expect(command).toContain('call "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64');

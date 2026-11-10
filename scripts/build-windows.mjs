@@ -48,6 +48,21 @@ function packageVersion() {
   return JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version;
 }
 
+/** package.json is the source of truth; abort if another manifest drifted. */
+export function verifyVersions() {
+  const expected = packageVersion();
+  const tauriVersion = JSON.parse(readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")).version;
+  const cargoVersion = /^version\s*=\s*"([^"]+)"/m
+    .exec(readFileSync(path.join(root, "src-tauri", "Cargo.toml"), "utf8"))?.[1];
+
+  if (tauriVersion !== expected || cargoVersion !== expected) {
+    throw new Error(
+      `Version mismatch: package.json ${expected}, tauri.conf.json ${tauriVersion}, Cargo.toml ${cargoVersion}. `
+      + "Bump every manifest to the current version before building.",
+    );
+  }
+}
+
 function releaseNotes(version) {
   return [
     `Portable Windows build and NSIS installer for Ispliced ${version}.`,
@@ -88,6 +103,7 @@ export function main(args = process.argv.slice(2)) {
   }
   if (args.some(arg => arg !== "--exe-only")) throw new Error("Unknown option. Use --exe-only or --help.");
   if (process.platform !== "win32") throw new Error("Run this build on Windows with Visual Studio 2026, or use the Windows executable GitHub Actions workflow.");
+  verifyVersions();
 
   const programFiles = process.env["ProgramFiles(x86)"] || process.env.ProgramFiles;
   const vswhere = programFiles && path.join(programFiles, "Microsoft Visual Studio", "Installer", "vswhere.exe");

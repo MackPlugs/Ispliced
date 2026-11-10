@@ -145,7 +145,7 @@ jobs:
           ls -la release
 
       # Cryptographic proof these files were built by this workflow in this repo.
-      # Verify with: gh attestation verify <file> --repo ascpixi/splicedd
+      # Verify with: gh attestation verify <file> --repo MackPlugs/Ispliced
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:

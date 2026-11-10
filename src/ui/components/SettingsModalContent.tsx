@@ -169,9 +169,9 @@ export default function SettingsModalContent({ onClose }: { onClose: () => void 
         <p className="text-xs text-muted text-center">
           Made with
           <img src="img/blob-heart.png" alt="love" className="w-3.5 inline mx-1 align-text-bottom" />
-          by <Link className="text-xs" href="https://ascpixi.github.io" target="_blank">@ascpixi</Link>
+          by <Link className="text-xs" href="https://github.com/mackplugs" target="_blank">@mackplugs</Link>
           {" · "}
-          <Link className="text-xs" href="https://github.com/ascpixi/splicedd" target="_blank">GitHub</Link>
+          <Link className="text-xs" href="https://github.com/MackPlugs/Ispliced" target="_blank">GitHub</Link>
           {" · "}
           v{__APP_VERSION__}
         </p>

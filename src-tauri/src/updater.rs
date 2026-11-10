@@ -5,8 +5,8 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_http::reqwest;
 use tauri_plugin_shell::ShellExt;
 
-const RELEASES_API_URL: &str = "https://api.github.com/repos/mackiediablo-art/Ispliced/releases";
-const DOWNLOAD_URL_PREFIX: &str = "https://github.com/mackiediablo-art/Ispliced/releases/download/";
+const RELEASES_API_URL: &str = "https://api.github.com/repos/MackPlugs/Ispliced/releases";
+const DOWNLOAD_URL_PREFIX: &str = "https://github.com/MackPlugs/Ispliced/releases/download/";
 
 /// Fetches the metadata of the project's GitHub releases, newest first. The raw
 /// release JSON array is returned to the frontend, which decides whether an
@@ -41,7 +41,7 @@ struct DownloadProgress {
     total: Option<u64>,
 }
 
-/// Downloads the installer at `url` (which must point to a splicedd GitHub
+/// Downloads the installer at `url` (which must point to an Ispliced GitHub
 /// release asset) into the temp directory, launches it, and exits the app so
 /// the installer can replace our files.
 #[tauri::command]
@@ -92,4 +92,21 @@ pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
 
     app.exit(0);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn updates_come_from_the_ispliced_repository() {
+        assert_eq!(
+            RELEASES_API_URL,
+            "https://api.github.com/repos/MackPlugs/Ispliced/releases"
+        );
+        assert_eq!(
+            DOWNLOAD_URL_PREFIX,
+            "https://github.com/MackPlugs/Ispliced/releases/download/"
+        );
+    }
 }

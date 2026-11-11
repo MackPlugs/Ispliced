@@ -5,8 +5,8 @@
 sample search, audio previews and DAW drag-and-drop, and adds artwork-based pack
 browsing, whole-pack downloads and navigation history.
 
-[Releases](https://github.com/mackiediablo-art/Ispliced/releases) ·
-[Windows builds](https://github.com/mackiediablo-art/Ispliced/actions/workflows/windows-build.yml) ·
+[Releases](https://github.com/MackPlugs/Ispliced/releases) ·
+[Windows builds](https://github.com/MackPlugs/Ispliced/actions/workflows/windows-build.yml) ·
 [Original project](https://github.com/ascpixi/splicedd)
 
 ![Ispliced sample pack browser showing artwork, search filters and a completed whole-pack download](./etc/ispliced-preview.png)
@@ -14,7 +14,7 @@ browsing, whole-pack downloads and navigation history.
 ## Original features
 
 These features were already present in the Splicedd checkout used to start this
-fork, commit [`15db3b6`](https://github.com/mackiediablo-art/Ispliced/commit/15db3b65e599172dcc18a0828c0de2f546e1db4d):
+fork, commit [`15db3b6`](https://github.com/MackPlugs/Ispliced/commit/15db3b65e599172dcc18a0828c0de2f546e1db4d):
 
 - **Sample search:** search the Splice sample catalogue without an in-app sign-in.
 - **Search filters:** instruments, genres, tags, musical key and major/minor
@@ -277,7 +277,7 @@ MSVC toolchain with the `rustup toolchain install` command above and retry.
 
 ### Build on GitHub instead
 
-Open [Actions → Windows executable](https://github.com/mackiediablo-art/Ispliced/actions/workflows/windows-build.yml),
+Open [Actions → Windows executable](https://github.com/MackPlugs/Ispliced/actions/workflows/windows-build.yml),
 choose **Run workflow**, and select your branch. After it succeeds, download
 **Ispliced-windows-x64-exe** or **Ispliced-windows-x64-installer** from the run's
 artifacts and extract the ZIP. This build uses the hosted Windows runner's C++

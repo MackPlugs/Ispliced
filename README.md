@@ -40,9 +40,6 @@ fork, commit [`15db3b6`](https://github.com/MackPlugs/Ispliced/commit/15db3b65e5
 
 These additions were made after cloning the original repository:
 
-- **Ispliced branding:** updated application and window names, README branding,
-  package names and release bundle filenames. The existing application identifier
-  is retained so saved settings remain available.
 - **Sample packs tab:** a dedicated artwork grid with pack-name search. The
   sample search filters and sorting controls are also available when finding packs.
 - **Pack details and tag exclusion:** pack cards show the sample count, provider and
@@ -102,12 +99,6 @@ These additions were made after cloning the original repository:
 - **Controlled batch exports:** process up to two samples concurrently, skip
   repeated sample IDs, keep conflicting filenames separate, and support audio
   longer than one minute when exporting a pack.
-- **Complete desktop shutdown:** closing the main window also exits the hidden
-  Splice search webview so the application does not remain running in Task Manager.
-- **Visual Studio 2026 builds:** commands for a Windows x64 application executable
-  or an NSIS `.exe` installer, with automatic discovery of the VS 2026 C++ tools.
-- **Manual Windows builds on GitHub:** a workflow that uploads the executable
-  and installer as downloadable artifacts without publishing a release.
 - **Automated checks:** unit tests for search, pack pagination, downloads, WAV
   conversion, navigation, library filters and build commands, component tests
   for the UI, browser tests for the browsing flows, and a CI workflow that runs
@@ -184,105 +175,6 @@ tolerance, then choose **Find matching samples** to search the catalogue for loo
 in that key and tempo. Analysis stays on your machine; only the resulting catalogue
 search leaves it. Other formats are rejected with a clear message while local
 analysis remains WAV-based.
-
-## Development
-
-Install [Node.js](https://nodejs.org/) (22 LTS or newer), Yarn Classic and
-[the Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your
-platform. The desktop shell also needs Rust through [rustup](https://rustup.rs/).
-
-```sh
-npm install --global yarn@1.22.22
-yarn install --frozen-lockfile
-yarn dev
-```
-
-`yarn dev` starts the browser UI with mock samples and pack artwork. For real
-sample playback, downloads and native drag-and-drop, start the desktop shell:
-
-```sh
-yarn tauri dev
-```
-
-| Command | Purpose |
-| --- | --- |
-| `yarn build` | TypeScript checking and production frontend build |
-| `yarn test` | Unit and component tests |
-| `yarn test:browser` | Browser tests for navigation, filtering and download notifications |
-| `npm run build:windows` | Windows application executable and NSIS installer |
-| `npm run build:exe` | Windows application executable only |
-
-For browser tests, install Chromium with `yarn playwright install chromium`,
-or set `CHROMIUM_PATH` to an existing Chromium executable.
-
-## Compile a Windows executable (Visual Studio 2026)
-
-Build on Windows. In **Visual Studio Installer → Visual Studio 2026 → Modify**,
-install **Desktop development with C++**, including the MSVC x64/x86 build tools
-and a Windows 10 or Windows 11 SDK. The full IDE or Build Tools edition works;
-this is a Tauri/Rust project, so no Visual Studio solution file is needed.
-
-Install [Node.js](https://nodejs.org/) (22 LTS or newer),
-[Rust through rustup](https://rustup.rs/), and the
-[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
-Open PowerShell or a terminal in the repository directory and prepare the tools:
-
-```powershell
-npm install --global yarn@1.22.22
-rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
-```
-
-Compile the application and an `.exe` installer:
-
-```powershell
-npm run build:windows
-```
-
-Or compile just the application `.exe`:
-
-```powershell
-npm run build:exe
-```
-
-Both commands discover Visual Studio **2026 (version 18)** using `vswhere`, activate
-its x64 C++ environment, install the locked JavaScript dependencies and compile
-the frontend and Rust application in release mode. They use the MSVC Rust
-toolchain and keep build outputs inside `src-tauri/target`, even when
-`CARGO_TARGET_DIR` is set in your terminal. Every finished build is then copied
-into `release/`, replacing the previous artifacts:
-
-| Output | Location |
-| --- | --- |
-| Portable application | `release/exe/ispliced.exe` |
-| Installer | `release/installer/Ispliced_<version>_x64-setup.exe` |
-
-`npm run build:exe` refreshes only `release/exe`; it leaves the last installer in
-place. Intermediate build output stays in
-`src-tauri/target/x86_64-pc-windows-msvc/release/`.
-
-`npm run build:windows` then creates or updates the GitHub release for the
-version in `package.json` and uploads the portable exe and installer to it. Bump
-the version to publish a new release; rebuilding the same version replaces the
-assets. Publishing needs the GitHub CLI (`gh`) signed in — without it the build
-still completes and only updates `release/`. `npm run build:exe` never publishes.
-
-The application executable requires WebView2 on the destination computer. Use
-the NSIS installer for distribution; it handles WebView2 installation when
-needed. Initial builds need Internet access for dependencies and installer
-tools. Builds are unsigned unless you configure Windows code signing.
-
-If the launcher cannot find Visual Studio, repair or enable the C++ workload in
-Visual Studio Installer. If Rust cannot locate the compiler/linker, update the
-MSVC toolchain with the `rustup toolchain install` command above and retry.
-
-### Build on GitHub instead
-
-Open [Actions → Windows executable](https://github.com/MackPlugs/Ispliced/actions/workflows/windows-build.yml),
-choose **Run workflow**, and select your branch. After it succeeds, download
-**Ispliced-windows-x64-exe** or **Ispliced-windows-x64-installer** from the run's
-artifacts and extract the ZIP. This build uses the hosted Windows runner's C++
-toolchain; it does not require Visual Studio on your computer and does not
-publish a release.
 
 ## macOS
 

@@ -101,7 +101,7 @@ function publishRelease(version, portable, installers) {
 
 export function main(args = process.argv.slice(2)) {
   if (args.includes("--help")) {
-    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe, published to GitHub\n  yarn build:exe      Application exe only (no release)\nArtifacts are copied to release/exe and release/installer.\nSee README.md for prerequisites and output paths.");
+    console.log("Windows x64 / Visual Studio 2026 builds:\n  yarn build:windows  Application exe + NSIS setup.exe, published to GitHub\n  yarn build:exe      Application exe only (no release)\nArtifacts are copied to release/exe and release/installer.");
     return;
   }
   if (args.some(arg => arg !== "--exe-only")) throw new Error("Unknown option. Use --exe-only or --help.");
